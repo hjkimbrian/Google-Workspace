@@ -10,7 +10,7 @@ Script modified from https://support.google.com/cloudidentity/answer/9250996?hl=
 For example:
 $domainsAllowedToLogin = "acme1.com,acme2.com"
 
-Also get the Chrom Enrollment Token from admin.google.com
+Also get the Chrome Enrollment Token from admin.google.com
 Instructions: https://support.google.com/chrome/a/answer/9301891?hl=en #>
 
 $domainsAllowedToLogin = ""
@@ -42,7 +42,7 @@ if ([Environment]::Is64BitOperatingSystem) {
     $chromeFileName = 'googlechromestandaloneenterprise64.msi'
 }
 
-<# Download the GCPW installer. #>
+<# Download the Chrome installer. #>
 $chromeUrlPrefix = 'https://dl.google.com/chrome/install/'
 $chromeUri = $chromeUrlPrefix + $chromeFileName
 Write-Host 'Downloading Chrome from' $chromeUri
