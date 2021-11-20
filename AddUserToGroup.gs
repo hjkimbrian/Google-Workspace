@@ -11,13 +11,15 @@ function addtoGroup() {
   var emails = [];
   var timeFrom = Math.floor(Date.now()/1000) - 60 * interval;
   var group = GroupsApp.getGroupByEmail("workspace-admins-community-comment@workspaceadmins.org");
-  var threads = GmailApp.search('subject: "Workspace Admins [Public] - Request for access" after:' + timeFrom);
+  var threads = GmailApp.search('label: "Access Request" after:' + timeFrom);
   for (var i = 0; i < threads.length; i++) {
     var messages = threads[i].getMessages();
     if (messages.length == 1) {      // only deal with threads with one message
       var ReplyToEmail = messages[0].getReplyTo().match(/([^<]+@[^>]+)/)[1];
       emails.push(ReplyToEmail);
-      messages[0].replyAll("We have added you to the Google Group, workspace-admins-community-comment@workspaceadmins.org. You should have access to the Shared Drive shortly.")
+      messages[0].reply("We have added you to the Google Group, workspace-admins-community-comment@workspaceadmins.org. You should have access to the Shared Drive shortly.",{
+        cc:"team@workspaceadmins.org"
+      })
     }
   }
   for (i=0; i < emails.length; i++) {
