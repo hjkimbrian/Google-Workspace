@@ -4,6 +4,12 @@ A collection of automation scripts for Google Workspace administrators. Covers c
 
 ## Scripts
 
+### Web Apps
+
+| Directory | Description |
+|-----------|-------------|
+| [`SignatureManager/`](SignatureManager/) | Full web app to manage Gmail signatures for all domain users, with a WYSIWYG editor and domain-wide delegation |
+
 ### Google Apps Scripts (`.gs`)
 
 | File | Description |

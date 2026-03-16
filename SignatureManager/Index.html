@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gmail Signature Manager</title>
+
+  <!-- Bootstrap 5 — layout and components -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <!-- Quill 1.3.7 — WYSIWYG rich text editor -->
+  <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet" />
+
+  <style>
+    /* ── Layout ──────────────────────────────────────────────────── */
+    body {
+      background: #f0f2f5;
+      min-height: 100vh;
+    }
+
+    #app-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Navbar ──────────────────────────────────────────────────── */
+    .navbar-brand {
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    /* ── Sidebar (user list) ──────────────────────────────────────── */
+    #sidebar {
+      width: 320px;
+      min-width: 260px;
+      max-width: 360px;
+      background: #fff;
+      border-right: 1px solid #dee2e6;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #user-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f2f5;
+      transition: background 0.12s;
+    }
+
+    .user-card:hover  { background: #f8f9fa; }
+    .user-card.active { background: #e8f0fe; border-left: 3px solid #1a73e8; }
+
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #e8eaed;
+    }
+
+    .user-avatar-placeholder {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #c2d3f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      color: #1a73e8;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .user-name  { font-size: 0.875rem; font-weight: 600; line-height: 1.2; }
+    .user-email { font-size: 0.78rem;  color: #6c757d; }
+
+    .badge-suspended {
+      font-size: 0.65rem;
+      background: #fce8e6;
+      color: #c5221f;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 4px;
+    }
+
+    /* ── Main editor area ─────────────────────────────────────────── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 20px 24px;
+      gap: 16px;
+    }
+
+    #editor-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    /* Quill toolbar styling */
+    .ql-toolbar.ql-snow {
+      border: none;
+      border-bottom: 1px solid #dee2e6;
+      background: #f8f9fa;
+      border-radius: 8px 8px 0 0;
+    }
+
+    .ql-container.ql-snow {
+      border: none;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .ql-editor {
+      min-height: 200px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ── Action bar ───────────────────────────────────────────────── */
+    #action-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Toast container ──────────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1100;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* ── Placeholder / empty states ────────────────────────────────── */
+    #empty-state {
+      color: #9aa0a6;
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    /* ── Variable chips ───────────────────────────────────────────── */
+    #var-bar {
+      background: #fafbfc;
+      border-top: 1px solid #dee2e6;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+
+    .var-chip {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 12px;
+      border: 1px solid #c5cae9;
+      background: #e8eaf6;
+      color: #3949ab;
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: monospace;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, border-color 0.1s;
+      line-height: 1.6;
+    }
+
+    .var-chip:hover {
+      background: #c5cae9;
+      border-color: #9fa8da;
+    }
+
+    #var-bar-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #9aa0a6;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* ── Loading skeleton ─────────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, #e8eaed 25%, #f1f3f4 50%, #e8eaed 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+  </style>
+</head>
+
+<body>
+<div id="app-shell">
+
+  <!-- ── Navbar ──────────────────────────────────────────────────────── -->
+  <nav class="navbar navbar-dark bg-primary px-3 flex-shrink-0">
+    <span class="navbar-brand mb-0 h6">
+      <i class="bi bi-envelope-at-fill me-2"></i>Gmail Signature Manager
+    </span>
+    <span id="domain-badge" class="badge bg-light text-primary fw-normal fs-6 ms-auto"></span>
+  </nav>
+
+  <!-- ── Body ────────────────────────────────────────────────────────── -->
+  <div class="d-flex flex-grow-1 overflow-hidden">
+
+    <!-- ── Sidebar ───────────────────────────────────────────────────── -->
+    <div id="sidebar">
+      <!-- Search box -->
+      <div class="p-2 border-bottom">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-white border-end-0">
+            <i class="bi bi-search text-muted"></i>
+          </span>
+          <input id="search-input" type="text" class="form-control border-start-0 ps-0"
+                 placeholder="Search users…" />
+        </div>
+      </div>
+
+      <!-- User list -->
+      <div id="user-list">
+        <div id="empty-state">
+          <i class="bi bi-people fs-2 d-block mb-2"></i>
+          <span id="empty-state-msg">Loading users…</span>
+        </div>
+      </div>
+
+      <!-- Load more -->
+      <div class="p-2 border-top text-center" id="load-more-wrap" style="display:none!important">
+        <button id="load-more-btn" class="btn btn-sm btn-outline-secondary w-100">
+          <i class="bi bi-chevron-down me-1"></i>Load more users
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Editor panel ───────────────────────────────────────────────── -->
+    <div id="main">
+
+      <!-- Current user info bar -->
+      <div id="user-info-bar" class="d-flex align-items-center gap-2" style="display:none!important">
+        <i class="bi bi-person-circle text-primary fs-5"></i>
+        <div>
+          <div id="selected-name"  class="fw-semibold lh-1" style="font-size:0.9rem"></div>
+          <div id="selected-email" class="text-muted"       style="font-size:0.78rem"></div>
+        </div>
+        <span id="loading-sig-badge" class="badge bg-secondary ms-2" style="display:none">
+          <span class="spinner-border spinner-border-sm me-1"></span>Loading…
+        </span>
+      </div>
+
+      <!-- WYSIWYG editor -->
+      <div id="editor-wrapper">
+        <div id="toolbar">
+          <span class="ql-formats">
+            <select class="ql-header">
+              <option value="1">Heading 1</option>
+              <option value="2">Heading 2</option>
+              <option value="3">Heading 3</option>
+              <option selected>Normal</option>
+            </select>
+          </span>
+          <span class="ql-formats">
+            <select class="ql-font">
+              <option selected>Sans-serif</option>
+              <option value="serif">Serif</option>
+              <option value="monospace">Monospace</option>
+            </select>
+          </span>
+          <span class="ql-formats">
+            <select class="ql-size">
+              <option value="small">Small</option>
+              <option selected>Normal</option>
+              <option value="large">Large</option>
+              <option value="huge">Huge</option>
+            </select>
+          </span>
+          <span class="ql-formats">
+            <button class="ql-bold"></button>
+            <button class="ql-italic"></button>
+            <button class="ql-underline"></button>
+            <button class="ql-strike"></button>
+          </span>
+          <span class="ql-formats">
+            <select class="ql-color"></select>
+            <select class="ql-background"></select>
+          </span>
+          <span class="ql-formats">
+            <button class="ql-link"></button>
+            <button class="ql-image"></button>
+          </span>
+          <span class="ql-formats">
+            <button class="ql-list" value="ordered"></button>
+            <button class="ql-list" value="bullet"></button>
+          </span>
+          <span class="ql-formats">
+            <select class="ql-align"></select>
+          </span>
+          <span class="ql-formats">
+            <button class="ql-clean"></button>
+          </span>
+        </div>
+        <div id="quill-editor"></div>
+
+        <!-- Variable insertion bar — chips are rendered by JS after init -->
+        <div id="var-bar">
+          <span id="var-bar-label">Insert variable:</span>
+          <div id="var-chips" class="d-flex gap-1 flex-wrap"></div>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div id="action-bar">
+        <button id="btn-update-user" class="btn btn-primary" disabled>
+          <i class="bi bi-person-check-fill me-1"></i>Update This User
+        </button>
+        <button id="btn-apply-all" class="btn btn-outline-danger" disabled>
+          <i class="bi bi-people-fill me-1"></i>Apply to All Users
+        </button>
+        <button id="btn-preview" class="btn btn-outline-secondary" disabled>
+          <i class="bi bi-eye me-1"></i>Preview
+        </button>
+        <span id="action-spinner" class="d-none">
+          <span class="spinner-border spinner-border-sm text-secondary me-1"></span>
+          <span id="action-status-text" class="text-muted small">Working…</span>
+        </span>
+      </div>
+
+    </div><!-- /#main -->
+  </div><!-- /.d-flex -->
+</div><!-- /#app-shell -->
+
+<!-- ── Confirm "Apply to All" modal ──────────────────────────────────────── -->
+<div class="modal fade" id="confirm-modal" tabindex="-1" aria-labelledby="confirm-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title" id="confirm-modal-label">
+          <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Apply to All Users
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>This will <strong>overwrite the Gmail signature for every active user</strong>
+           in your domain with the editor contents.</p>
+        <p class="text-muted small mb-0">Suspended accounts will be skipped.
+           This action cannot be undone automatically — back up existing signatures first
+           if needed.</p>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirm-apply-all-btn">
+          Yes, apply to all users
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Preview modal ──────────────────────────────────────────────────────── -->
+<div class="modal fade" id="preview-modal" tabindex="-1" aria-labelledby="preview-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-1">
+        <div>
+          <h5 class="modal-title mb-0" id="preview-modal-label">
+            <i class="bi bi-eye text-primary me-2"></i>Signature Preview
+          </h5>
+          <div id="preview-user-label" class="text-muted small"></div>
+        </div>
+        <button type="button" class="btn-close ms-3" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0 position-relative">
+        <!-- Loading state -->
+        <div id="preview-loading" class="text-center py-5 text-muted">
+          <div class="spinner-border spinner-border-sm me-2"></div>Loading preview…
+        </div>
+        <!-- Rendered signature in a sandboxed iframe to isolate CSS -->
+        <iframe id="preview-iframe"
+                sandbox="allow-same-origin"
+                style="width:100%; min-height:220px; border:none; display:none;
+                       border-top: 1px solid #dee2e6;">
+        </iframe>
+      </div>
+      <div class="modal-footer border-0 pt-1">
+        <p class="text-muted small me-auto mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          Variables are substituted with <strong id="preview-user-email-note"></strong>'s Directory profile.
+        </p>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast container ────────────────────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<!-- Bootstrap 5 JS bundle -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Quill WYSIWYG -->
+<script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  State
+// ════════════════════════════════════════════════════════════════════════════
+const state = {
+  allUsers:       [],   // All users loaded so far (for client-side search)
+  nextPageToken:  null, // Pagination cursor; null means we've loaded everything
+  selectedUser:   null, // Currently selected user object
+  domain:         '',
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Quill WYSIWYG initialisation
+// ════════════════════════════════════════════════════════════════════════════
+const quill = new Quill('#quill-editor', {
+  modules: { toolbar: '#toolbar' },
+  theme: 'snow',
+  placeholder: 'Select a user on the left to load their signature…',
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Initialise — called once on page load
+// ════════════════════════════════════════════════════════════════════════════
+(function init() {
+  // Load domain config, then kick off the first page of users
+  google.script.run
+    .withSuccessHandler(function(config) {
+      state.domain = config.domain;
+      document.getElementById('domain-badge').textContent = config.domain;
+      loadUsers();
+    })
+    .withFailureHandler(function(err) {
+      setEmptyState('⚠ ' + err.message);
+      showToast(err.message, 'danger');
+    })
+    .getConfig();
+
+  // Load variable definitions and render the chip bar (independent of config)
+  google.script.run
+    .withSuccessHandler(renderVariableChips)
+    .withFailureHandler(function() { /* non-fatal: chips just won't appear */ })
+    .getAvailableVariables();
+})();
+
+// ════════════════════════════════════════════════════════════════════════════
+//  User list
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Requests the next page of users from the server and appends them to
+ * the list. Disables the "Load more" button while fetching.
+ */
+function loadUsers() {
+  setEmptyState('Loading users…');
+  document.getElementById('load-more-btn').disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      state.allUsers = state.allUsers.concat(result.users);
+      state.nextPageToken = result.nextPageToken;
+
+      renderUserList(state.allUsers, document.getElementById('search-input').value.trim());
+
+      // Show / hide "Load more" based on whether more pages exist
+      const wrap = document.getElementById('load-more-wrap');
+      wrap.style.display = result.nextPageToken ? '' : 'none';
+      document.getElementById('load-more-btn').disabled = false;
+    })
+    .withFailureHandler(function(err) {
+      setEmptyState('Failed to load users: ' + err.message);
+      showToast(err.message, 'danger');
+    })
+    .getUsers(state.nextPageToken);
+}
+
+/**
+ * Renders user cards in the sidebar list, filtered by `query`.
+ *
+ * @param {Array}  users
+ * @param {string} query  Live search filter (case-insensitive).
+ */
+function renderUserList(users, query) {
+  const list   = document.getElementById('user-list');
+  const filter = (query || '').toLowerCase();
+
+  const filtered = users.filter(function(u) {
+    if (!filter) return true;
+    return (
+      (u.primaryEmail || '').toLowerCase().includes(filter) ||
+      ((u.name && u.name.fullName) || '').toLowerCase().includes(filter)
+    );
+  });
+
+  if (filtered.length === 0) {
+    list.innerHTML = '';
+    setEmptyState(query ? 'No users match "' + query + '".' : 'No users found.');
+    return;
+  }
+
+  // Hide empty state when we have results
+  document.getElementById('empty-state').style.display = 'none';
+
+  list.innerHTML = filtered.map(function(user) {
+    const initials = getInitials(user.name && user.name.fullName);
+    const avatarHtml = user.thumbnailPhotoUrl
+      ? '<img class="user-avatar" src="' + escapeHtml(user.thumbnailPhotoUrl) + '" alt="" />'
+      : '<div class="user-avatar-placeholder">' + escapeHtml(initials) + '</div>';
+
+    const suspendedBadge = user.suspended
+      ? '<span class="badge-suspended">suspended</span>'
+      : '';
+
+    const isActive = state.selectedUser &&
+                     state.selectedUser.primaryEmail === user.primaryEmail;
+
+    return (
+      '<div class="user-card' + (isActive ? ' active' : '') + '" ' +
+           'data-email="' + escapeHtml(user.primaryEmail) + '">' +
+        avatarHtml +
+        '<div class="overflow-hidden">' +
+          '<div class="user-name text-truncate">' +
+            escapeHtml((user.name && user.name.fullName) || user.primaryEmail) +
+            suspendedBadge +
+          '</div>' +
+          '<div class="user-email text-truncate">' + escapeHtml(user.primaryEmail) + '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }).join('');
+
+  // Attach click handlers
+  list.querySelectorAll('.user-card').forEach(function(card) {
+    card.addEventListener('click', function() {
+      const email = card.dataset.email;
+      const user  = state.allUsers.find(function(u) { return u.primaryEmail === email; });
+      if (user) selectUser(user);
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  User selection + signature loading
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Selects a user, highlights them in the sidebar, and loads their signature
+ * into the Quill editor.
+ *
+ * @param {object} user  User object from the Directory API.
+ */
+function selectUser(user) {
+  state.selectedUser = user;
+
+  // Update sidebar active state
+  document.querySelectorAll('.user-card').forEach(function(c) {
+    c.classList.toggle('active', c.dataset.email === user.primaryEmail);
+  });
+
+  // Show user info bar
+  const infoBar = document.getElementById('user-info-bar');
+  infoBar.style.display = '';
+  document.getElementById('selected-name').textContent =
+    (user.name && user.name.fullName) || user.primaryEmail;
+  document.getElementById('selected-email').textContent = user.primaryEmail;
+
+  // Show loading badge while fetching
+  const badge = document.getElementById('loading-sig-badge');
+  badge.style.display = '';
+
+  // Disable buttons during load
+  document.getElementById('btn-update-user').disabled = true;
+  document.getElementById('btn-apply-all').disabled   = true;
+  document.getElementById('btn-preview').disabled     = true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      badge.style.display = 'none';
+      // dangerouslyPasteHTML preserves existing HTML tags from Gmail
+      quill.root.innerHTML = result.signature || '';
+      // Re-enable action buttons
+      document.getElementById('btn-update-user').disabled = false;
+      document.getElementById('btn-apply-all').disabled   = false;
+      document.getElementById('btn-preview').disabled     = false;
+    })
+    .withFailureHandler(function(err) {
+      badge.style.display = 'none';
+      showToast('Could not load signature: ' + err.message, 'danger');
+      document.getElementById('btn-apply-all').disabled = false;
+      document.getElementById('btn-preview').disabled   = false;
+    })
+    .getUserSignature(user.primaryEmail);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Signature update handlers
+// ════════════════════════════════════════════════════════════════════════════
+
+document.getElementById('btn-update-user').addEventListener('click', function() {
+  if (!state.selectedUser) return;
+
+  const html = quill.root.innerHTML;
+
+  setActionLoading(true, 'Updating signature for ' + state.selectedUser.primaryEmail + '…');
+
+  google.script.run
+    .withSuccessHandler(function() {
+      setActionLoading(false);
+      showToast(
+        'Signature updated for ' + state.selectedUser.primaryEmail + '.', 'success'
+      );
+    })
+    .withFailureHandler(function(err) {
+      setActionLoading(false);
+      showToast('Update failed: ' + err.message, 'danger');
+    })
+    .updateUserSignature(state.selectedUser.primaryEmail, html);
+});
+
+document.getElementById('btn-apply-all').addEventListener('click', function() {
+  // Show confirmation modal before proceeding
+  var modal = new bootstrap.Modal(document.getElementById('confirm-modal'));
+  modal.show();
+});
+
+document.getElementById('confirm-apply-all-btn').addEventListener('click', function() {
+  bootstrap.Modal.getInstance(document.getElementById('confirm-modal')).hide();
+
+  const html = quill.root.innerHTML;
+  setActionLoading(true, 'Applying signature to all users — please wait…');
+
+  // Disable both buttons for the duration
+  document.getElementById('btn-update-user').disabled = true;
+  document.getElementById('btn-apply-all').disabled   = true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      setActionLoading(false);
+      document.getElementById('btn-update-user').disabled = false;
+      document.getElementById('btn-apply-all').disabled   = false;
+      document.getElementById('btn-preview').disabled     = false;
+
+      var msg = 'Updated ' + result.updated + ' user(s).';
+      if (result.failed && result.failed.length > 0) {
+        msg += ' ' + result.failed.length + ' failed — see console for details.';
+        console.warn('Failed updates:', result.failed);
+        showToast(msg, 'warning');
+      } else {
+        showToast(msg, 'success');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setActionLoading(false);
+      document.getElementById('btn-update-user').disabled = false;
+      document.getElementById('btn-apply-all').disabled   = false;
+      document.getElementById('btn-preview').disabled     = false;
+      showToast('Apply-to-all failed: ' + err.message, 'danger');
+    })
+    .updateAllUsersSignature(html);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Variable chips
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Renders the variable chip bar from the server-supplied variable definitions.
+ * Clicking a chip inserts the {{variable}} token at the current cursor position
+ * in the Quill editor.
+ *
+ * @param {Array<{variable:string, label:string, description:string}>} variables
+ */
+function renderVariableChips(variables) {
+  const container = document.getElementById('var-chips');
+  container.innerHTML = variables.map(function(v) {
+    return (
+      '<button class="var-chip" ' +
+             'title="' + escapeHtml(v.description) + '" ' +
+             'data-var="' + escapeHtml(v.variable) + '">' +
+        escapeHtml(v.label) +
+      '</button>'
+    );
+  }).join('');
+
+  container.querySelectorAll('.var-chip').forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      insertVariable(chip.dataset.var);
+    });
+  });
+}
+
+/**
+ * Inserts a variable token (e.g. "{{firstName}}") at the editor's current
+ * cursor position, then advances the cursor past it.
+ *
+ * @param {string} varToken  The full placeholder text, e.g. "{{firstName}}".
+ */
+function insertVariable(varToken) {
+  quill.focus();
+  const range = quill.getSelection(true); // true: focus the editor first
+  quill.insertText(range.index, varToken, 'user');
+  quill.setSelection(range.index + varToken.length);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Preview
+// ════════════════════════════════════════════════════════════════════════════
+
+document.getElementById('btn-preview').addEventListener('click', function() {
+  if (!state.selectedUser) return;
+
+  const htmlTemplate = quill.root.innerHTML;
+  const user         = state.selectedUser;
+
+  // Prepare and show the modal in loading state
+  document.getElementById('preview-user-label').textContent =
+    (user.name && user.name.fullName ? user.name.fullName + ' — ' : '') +
+    user.primaryEmail;
+  document.getElementById('preview-user-email-note').textContent =
+    user.primaryEmail;
+  document.getElementById('preview-loading').style.display = '';
+  document.getElementById('preview-iframe').style.display  = 'none';
+
+  const previewModal = new bootstrap.Modal(document.getElementById('preview-modal'));
+  previewModal.show();
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      const iframe = document.getElementById('preview-iframe');
+
+      // Write rendered HTML into the sandboxed iframe
+      iframe.contentDocument.open();
+      iframe.contentDocument.write(
+        '<!DOCTYPE html><html><head>' +
+        '<meta charset="UTF-8">' +
+        '<style>body{margin:16px;font-family:sans-serif;font-size:14px;line-height:1.5}</style>' +
+        '</head><body>' + result.html + '</body></html>'
+      );
+      iframe.contentDocument.close();
+
+      // Auto-size the iframe to its content height
+      iframe.style.minHeight =
+        Math.max(iframe.contentDocument.body.scrollHeight + 32, 120) + 'px';
+
+      document.getElementById('preview-loading').style.display = 'none';
+      iframe.style.display = '';
+    })
+    .withFailureHandler(function(err) {
+      bootstrap.Modal.getInstance(document.getElementById('preview-modal')).hide();
+      showToast('Preview failed: ' + err.message, 'danger');
+    })
+    .previewSignatureForUser(user.primaryEmail, htmlTemplate);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Search — live filter as the user types
+// ════════════════════════════════════════════════════════════════════════════
+document.getElementById('search-input').addEventListener('input', function() {
+  renderUserList(state.allUsers, this.value.trim());
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Load more users
+// ════════════════════════════════════════════════════════════════════════════
+document.getElementById('load-more-btn').addEventListener('click', loadUsers);
+
+// ════════════════════════════════════════════════════════════════════════════
+//  UI helpers
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Displays or hides the loading spinner / status text in the action bar.
+ *
+ * @param {boolean} loading
+ * @param {string}  [text]  Optional status text while loading.
+ */
+function setActionLoading(loading, text) {
+  const spinner = document.getElementById('action-spinner');
+  spinner.classList.toggle('d-none', !loading);
+  if (text) document.getElementById('action-status-text').textContent = text;
+}
+
+/**
+ * Updates the sidebar empty-state message.
+ *
+ * @param {string} msg
+ */
+function setEmptyState(msg) {
+  const el = document.getElementById('empty-state');
+  el.style.display = '';
+  document.getElementById('empty-state-msg').textContent = msg;
+}
+
+/**
+ * Shows a Bootstrap-style toast notification.
+ *
+ * @param {string} message
+ * @param {'success'|'danger'|'warning'|'info'} type  Bootstrap contextual colour.
+ */
+function showToast(message, type) {
+  const container = document.getElementById('toast-container');
+  const id = 'toast-' + Date.now();
+
+  const iconMap = {
+    success: 'bi-check-circle-fill',
+    danger:  'bi-x-circle-fill',
+    warning: 'bi-exclamation-triangle-fill',
+    info:    'bi-info-circle-fill',
+  };
+
+  const html =
+    '<div id="' + id + '" class="toast align-items-center text-white bg-' + type +
+    ' border-0 show" role="alert">' +
+      '<div class="d-flex">' +
+        '<div class="toast-body d-flex align-items-center gap-2">' +
+          '<i class="bi ' + (iconMap[type] || 'bi-info-circle-fill') + '"></i>' +
+          escapeHtml(message) +
+        '</div>' +
+        '<button type="button" class="btn-close btn-close-white me-2 m-auto" ' +
+          'data-bs-dismiss="toast"></button>' +
+      '</div>' +
+    '</div>';
+
+  container.insertAdjacentHTML('beforeend', html);
+
+  const toastEl = document.getElementById(id);
+  const toast   = new bootstrap.Toast(toastEl, { delay: 5000 });
+  toast.show();
+  toastEl.addEventListener('hidden.bs.toast', function() { toastEl.remove(); });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Utility functions
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Derives up to two initials from a display name string.
+ *
+ * @param {string} fullName
+ * @returns {string} e.g. "JD" for "John Doe".
+ */
+function getInitials(fullName) {
+  if (!fullName) return '?';
+  var parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/**
+ * Escapes a string for safe insertion into HTML attributes and text nodes.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+</script>
+</body>
+</html>
