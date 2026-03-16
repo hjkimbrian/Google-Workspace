@@ -107,7 +107,9 @@ function getUsers(pageToken) {
     '&orderBy=email' +
     // Request only the fields we need to minimise response size
     '&fields=' + encodeURIComponent(
-      'users(primaryEmail,name/fullName,thumbnailPhotoUrl,suspended),' +
+      // isMailboxSetup = true only for accounts that have Gmail provisioned;
+      // we surface this in the sidebar so admins can filter non-Gmail accounts.
+      'users(primaryEmail,name/fullName,thumbnailPhotoUrl,suspended,isMailboxSetup),' +
       'nextPageToken'
     );
 
@@ -244,8 +246,10 @@ function updateAllUsersSignature(htmlTemplate) {
     for (var i = 0; i < page.users.length; i++) {
       var user = page.users[i];
 
-      // Skip suspended accounts — they cannot receive mail and the API would error
-      if (user.suspended) continue;
+      // Skip suspended accounts and users without a Gmail mailbox.
+      // Attempting to set a signature for a non-Gmail account returns 400
+      // "Mail service not enabled" from the Gmail API.
+      if (user.suspended || user.isMailboxSetup === false) continue;
 
       try {
         var profile  = getUserProfile_(user.primaryEmail, dirToken);

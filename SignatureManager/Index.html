@@ -123,6 +123,10 @@
       border-bottom: 1px solid #dee2e6;
       background: #f8f9fa;
       border-radius: 8px 8px 0 0;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 2px;
     }
 
     .ql-container.ql-snow {
@@ -135,6 +139,58 @@
       min-height: 200px;
       font-size: 14px;
       line-height: 1.6;
+    }
+
+    /* ── HTML source mode textarea ────────────────────────────────── */
+    /*
+     * Shown when the user toggles HTML source view. Styled as a dark
+     * code editor to visually differentiate it from the WYSIWYG surface.
+     */
+    #html-source {
+      display: none;            /* hidden by default; JS toggles this */
+      flex: 1;
+      min-height: 200px;
+      border: none;
+      outline: none;
+      resize: none;
+      padding: 14px 16px;
+      font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+      font-size: 12.5px;
+      line-height: 1.6;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      tab-size: 2;
+    }
+
+    /* ── HTML mode toggle button (lives in the Quill toolbar) ─────── */
+    #btn-html-mode {
+      /* Reset Quill's button defaults */
+      height: 24px !important;
+      width: auto !important;
+      padding: 0 7px !important;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 11px !important;
+      font-weight: 700;
+      color: #495057;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      line-height: 24px;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+      white-space: nowrap;
+    }
+
+    #btn-html-mode:hover {
+      background: #e9ecef;
+      border-color: #ced4da;
+    }
+
+    /* Active = currently in HTML source mode */
+    #btn-html-mode.active {
+      background: #1e1e1e;
+      color: #4ec9b0;           /* VS Code teal — recognisable "code" colour */
+      border-color: #444;
     }
 
     /* ── Action bar ───────────────────────────────────────────────── */
@@ -205,6 +261,31 @@
       white-space: nowrap;
     }
 
+    /* ── "No Gmail" badge (shown on non-mailbox accounts) ────────── */
+    .badge-no-gmail {
+      font-size: 0.62rem;
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 4px;
+      white-space: nowrap;
+    }
+
+    /* Warning banner shown in the editor when a non-Gmail user is selected */
+    #no-gmail-warning {
+      display: none;
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      color: #664d03;
+      align-items: center;
+      gap: 8px;
+    }
+
     /* ── Loading skeleton ─────────────────────────────────────────── */
     .skeleton {
       background: linear-gradient(90deg, #e8eaed 25%, #f1f3f4 50%, #e8eaed 75%);
@@ -216,6 +297,23 @@
     @keyframes shimmer {
       0%   { background-position: 200% 0; }
       100% { background-position: -200% 0; }
+    }
+
+    /* ── Image preview area inside the Insert Image modal ─────────── */
+    #img-preview-wrap {
+      display: none;
+      text-align: center;
+      padding: 12px;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      min-height: 80px;
+    }
+
+    #img-preview {
+      max-width: 100%;
+      max-height: 200px;
+      border-radius: 4px;
     }
   </style>
 </head>
@@ -244,6 +342,18 @@
           </span>
           <input id="search-input" type="text" class="form-control border-start-0 ps-0"
                  placeholder="Search users…" />
+        </div>
+      </div>
+
+      <!-- Filter bar: user count + "Gmail only" toggle -->
+      <div class="d-flex align-items-center justify-content-between px-3 py-1 border-bottom bg-light">
+        <span class="text-muted" style="font-size:0.75rem">
+          <span id="user-count-label">–</span>
+        </span>
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="gmail-only-toggle" checked />
+          <label class="form-check-label text-muted" for="gmail-only-toggle"
+                 style="font-size:0.75rem; cursor:pointer;">Gmail only</label>
         </div>
       </div>
 
@@ -278,8 +388,22 @@
         </span>
       </div>
 
-      <!-- WYSIWYG editor -->
+      <!-- Warning shown when a user without Gmail is selected -->
+      <div id="no-gmail-warning" role="alert">
+        <i class="bi bi-exclamation-triangle-fill text-warning fs-5"></i>
+        <div>
+          <strong>Gmail not enabled</strong> for this account —
+          signatures cannot be read or saved.
+          The template can still be edited and applied to other users.
+        </div>
+      </div>
+
+      <!-- WYSIWYG / HTML editor wrapper -->
       <div id="editor-wrapper">
+
+        <!-- Quill toolbar
+             The last <span> contains our custom HTML-mode toggle which is
+             NOT a Quill format button — it is wired up manually in JS. -->
         <div id="toolbar">
           <span class="ql-formats">
             <select class="ql-header">
@@ -315,8 +439,14 @@
             <select class="ql-background"></select>
           </span>
           <span class="ql-formats">
+            <!--
+              ql-link   — Quill's built-in link handler (unchanged).
+              ql-image  — We OVERRIDE this handler below to show a URL dialog
+                          instead of the default file-picker which base64-encodes
+                          images and blows past Gmail's 10 000-character limit.
+            -->
             <button class="ql-link"></button>
-            <button class="ql-image"></button>
+            <button class="ql-image" title="Insert image by URL"></button>
           </span>
           <span class="ql-formats">
             <button class="ql-list" value="ordered"></button>
@@ -328,8 +458,26 @@
           <span class="ql-formats">
             <button class="ql-clean"></button>
           </span>
+          <!-- Custom HTML source-mode toggle (not a Quill format) -->
+          <span class="ql-formats">
+            <button id="btn-html-mode" title="Toggle HTML source view">&lt;/&gt;</button>
+          </span>
         </div>
+
+        <!--
+          WYSIWYG surface — visible in normal mode.
+          Quill mounts into this div.
+        -->
         <div id="quill-editor"></div>
+
+        <!--
+          Raw HTML textarea — visible only in HTML source mode.
+          Synced with Quill on every mode switch so neither view loses edits.
+        -->
+        <textarea id="html-source"
+                  spellcheck="false"
+                  aria-label="HTML source editor"
+                  placeholder="<!-- Paste or type raw HTML here -->"></textarea>
 
         <!-- Variable insertion bar — chips are rendered by JS after init -->
         <div id="var-bar">
@@ -358,6 +506,76 @@
     </div><!-- /#main -->
   </div><!-- /.d-flex -->
 </div><!-- /#app-shell -->
+
+<!-- ── Insert Image modal ─────────────────────────────────────────────────── -->
+<!--
+  Replaces Quill's default image handler which base64-encodes the selected file.
+  Gmail caps signatures at 10 000 characters; a single base64 image far exceeds
+  that. This dialog inserts a plain <img src="https://..."> tag instead, which
+  references the image from a publicly accessible URL and adds zero extra chars.
+-->
+<div class="modal fade" id="image-modal" tabindex="-1"
+     aria-labelledby="image-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-1">
+        <h5 class="modal-title" id="image-modal-label">
+          <i class="bi bi-image text-primary me-2"></i>Insert Image
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <!-- URL input + inline preview trigger -->
+        <div class="mb-3">
+          <label for="img-url" class="form-label small fw-semibold">
+            Image URL <span class="text-danger">*</span>
+          </label>
+          <div class="input-group input-group-sm">
+            <input id="img-url" type="url" class="form-control"
+                   placeholder="https://example.com/logo.png" />
+            <button id="img-preview-btn" class="btn btn-outline-secondary" type="button"
+                    title="Load a preview of the image">
+              <i class="bi bi-eye me-1"></i>Preview
+            </button>
+          </div>
+          <div class="form-text">
+            Must be a <strong>publicly accessible</strong> URL — not a local file or data URI.
+            Gmail loads images directly from this URL when recipients open the email.
+          </div>
+        </div>
+
+        <!-- Optional attributes -->
+        <div class="row g-2 mb-3">
+          <div class="col">
+            <label for="img-alt" class="form-label small fw-semibold">Alt text</label>
+            <input id="img-alt" type="text" class="form-control form-control-sm"
+                   placeholder="Company logo" />
+          </div>
+          <div class="col-4">
+            <label for="img-width" class="form-label small fw-semibold">Width (px)</label>
+            <input id="img-width" type="number" class="form-control form-control-sm"
+                   placeholder="200" min="1" max="9999" />
+          </div>
+        </div>
+
+        <!-- Image preview — shown after clicking "Preview" -->
+        <div id="img-preview-wrap">
+          <img id="img-preview" src="" alt="Preview" />
+        </div>
+
+      </div>
+      <div class="modal-footer border-0 pt-1">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button id="img-insert-btn" type="button" class="btn btn-primary btn-sm">
+          <i class="bi bi-image me-1"></i>Insert Image
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ── Confirm "Apply to All" modal ──────────────────────────────────────── -->
 <div class="modal fade" id="confirm-modal" tabindex="-1" aria-labelledby="confirm-modal-label" aria-hidden="true">
@@ -439,6 +657,7 @@ const state = {
   nextPageToken:  null, // Pagination cursor; null means we've loaded everything
   selectedUser:   null, // Currently selected user object
   domain:         '',
+  htmlModeActive: false, // True when the raw-HTML textarea is shown instead of Quill
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -448,6 +667,155 @@ const quill = new Quill('#quill-editor', {
   modules: { toolbar: '#toolbar' },
   theme: 'snow',
   placeholder: 'Select a user on the left to load their signature…',
+});
+
+/*
+ * Override Quill's built-in image toolbar handler.
+ *
+ * The default handler opens a file-picker and converts the chosen file into a
+ * base64 data URI embedded directly in the HTML.  Gmail rejects signatures
+ * longer than 10 000 characters, and a single base64-encoded image easily
+ * exceeds that limit.
+ *
+ * Our replacement shows a modal that asks for a publicly hosted URL and
+ * inserts a plain <img src="https://..."> tag, which is just ~60 characters.
+ */
+quill.getModule('toolbar').addHandler('image', function () {
+  // Reset the modal fields each time it opens
+  document.getElementById('img-url').value   = '';
+  document.getElementById('img-alt').value   = '';
+  document.getElementById('img-width').value = '';
+  document.getElementById('img-preview').src = '';
+  document.getElementById('img-preview-wrap').style.display = 'none';
+  imageModal.show();
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  HTML source mode
+// ════════════════════════════════════════════════════════════════════════════
+
+const quillEditorEl  = document.getElementById('quill-editor');
+const htmlSourceEl   = document.getElementById('html-source');
+const btnHtmlMode    = document.getElementById('btn-html-mode');
+
+/**
+ * Returns the current editor HTML regardless of which mode is active.
+ *
+ * Always use this instead of reading quill.root.innerHTML directly so that
+ * edits made while in HTML source mode are never silently discarded.
+ *
+ * @returns {string} Raw HTML string suitable for sending to the Gmail API.
+ */
+function getEditorHtml() {
+  return state.htmlModeActive ? htmlSourceEl.value : quill.root.innerHTML;
+}
+
+/**
+ * Sets the editor contents in both modes so that toggling never loses data.
+ *
+ * @param {string} html
+ */
+function setEditorHtml(html) {
+  quill.root.innerHTML = html;  // always keep Quill in sync
+  htmlSourceEl.value   = html;  // always keep textarea in sync
+}
+
+/*
+ * Toggle between WYSIWYG mode and raw HTML source mode.
+ *
+ * On each toggle we copy the content from the active surface to the inactive
+ * one, so neither view ever loses the user's edits.
+ */
+btnHtmlMode.addEventListener('click', function () {
+  if (!state.htmlModeActive) {
+    // ── Entering HTML source mode ──────────────────────────────────────
+    htmlSourceEl.value          = quill.root.innerHTML; // export Quill → textarea
+    quillEditorEl.style.display = 'none';
+    htmlSourceEl.style.display  = '';
+    htmlSourceEl.focus();
+    btnHtmlMode.classList.add('active');
+    btnHtmlMode.title = 'Switch back to visual editor';
+  } else {
+    // ── Returning to WYSIWYG mode ──────────────────────────────────────
+    quill.root.innerHTML        = htmlSourceEl.value;   // import textarea → Quill
+    htmlSourceEl.style.display  = 'none';
+    quillEditorEl.style.display = '';
+    quill.focus();
+    btnHtmlMode.classList.remove('active');
+    btnHtmlMode.title = 'Toggle HTML source view';
+  }
+  state.htmlModeActive = !state.htmlModeActive;
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Insert Image modal
+// ════════════════════════════════════════════════════════════════════════════
+
+const imageModal = new bootstrap.Modal(document.getElementById('image-modal'));
+
+/* "Preview" button — load the URL into the preview <img> so admins can
+   verify the image loads before committing it to the signature. */
+document.getElementById('img-preview-btn').addEventListener('click', function () {
+  const url = document.getElementById('img-url').value.trim();
+  if (!url) { showToast('Enter a URL first.', 'warning'); return; }
+
+  const preview     = document.getElementById('img-preview');
+  const previewWrap = document.getElementById('img-preview-wrap');
+
+  preview.src                = url;
+  previewWrap.style.display  = '';
+
+  // Show a broken-image message if the URL fails to load
+  preview.onerror = function () {
+    previewWrap.innerHTML =
+      '<span class="text-danger small">' +
+      '<i class="bi bi-exclamation-triangle me-1"></i>' +
+      'Could not load image — check the URL and make sure it is publicly accessible.' +
+      '</span>';
+  };
+});
+
+/* "Insert Image" button — build an <img> tag and inject it at the cursor. */
+document.getElementById('img-insert-btn').addEventListener('click', function () {
+  const url   = document.getElementById('img-url').value.trim();
+  const alt   = document.getElementById('img-alt').value.trim();
+  const width = parseInt(document.getElementById('img-width').value, 10);
+
+  if (!url) { showToast('Please enter an image URL.', 'warning'); return; }
+
+  if (state.htmlModeActive) {
+    // ── Insert raw <img> tag into the HTML textarea at the cursor ──────
+    const tag =
+      '<img src="' + escapeAttr(url) + '"' +
+      (alt             ? ' alt="'   + escapeAttr(alt)           + '"' : '') +
+      (!isNaN(width)   ? ' width="' + width                     + '"' : '') +
+      ' />';
+
+    const pos      = htmlSourceEl.selectionStart;
+    htmlSourceEl.value =
+      htmlSourceEl.value.slice(0, pos) + tag + htmlSourceEl.value.slice(htmlSourceEl.selectionEnd);
+    htmlSourceEl.selectionStart = htmlSourceEl.selectionEnd = pos + tag.length;
+    htmlSourceEl.focus();
+
+  } else {
+    // ── Insert via Quill at the current cursor position ────────────────
+    /*
+     * dangerouslyPasteHTML respects the cursor position and lets us set
+     * all img attributes in one shot, unlike insertEmbed which only
+     * accepts a src value and loses alt/width.
+     */
+    const range = quill.getSelection(true);
+    const tag =
+      '<img src="' + escapeAttr(url) + '"' +
+      (alt             ? ' alt="'   + escapeAttr(alt)           + '"' : '') +
+      (!isNaN(width)   ? ' width="' + width                     + '"' : '') +
+      ' />';
+
+    quill.clipboard.dangerouslyPasteHTML(range.index, tag);
+    quill.setSelection(range.index + 1);
+  }
+
+  imageModal.hide();
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -506,22 +874,39 @@ function loadUsers() {
 }
 
 /**
- * Renders user cards in the sidebar list, filtered by `query`.
+ * Renders user cards in the sidebar list.
+ *
+ * Applies two filters:
+ *  1. "Gmail only" toggle — hides accounts where isMailboxSetup is false.
+ *  2. Live search query  — case-insensitive match on name or email.
+ *
+ * Also updates the user count label to reflect what is currently visible.
  *
  * @param {Array}  users
  * @param {string} query  Live search filter (case-insensitive).
  */
 function renderUserList(users, query) {
-  const list   = document.getElementById('user-list');
-  const filter = (query || '').toLowerCase();
+  const list        = document.getElementById('user-list');
+  const filter      = (query || '').toLowerCase();
+  const gmailOnly   = document.getElementById('gmail-only-toggle').checked;
 
   const filtered = users.filter(function(u) {
+    // "Gmail only" — exclude accounts without an active Gmail mailbox
+    if (gmailOnly && u.isMailboxSetup === false) return false;
+    // Text search
     if (!filter) return true;
     return (
       (u.primaryEmail || '').toLowerCase().includes(filter) ||
       ((u.name && u.name.fullName) || '').toLowerCase().includes(filter)
     );
   });
+
+  // Update the count label so admins know how many accounts are shown
+  const gmailCount = users.filter(function(u) { return u.isMailboxSetup !== false; }).length;
+  document.getElementById('user-count-label').textContent =
+    gmailOnly
+      ? filtered.length + ' of ' + gmailCount + ' Gmail user' + (gmailCount !== 1 ? 's' : '')
+      : filtered.length + ' of ' + users.length + ' user' + (users.length !== 1 ? 's' : '');
 
   if (filtered.length === 0) {
     list.innerHTML = '';
@@ -542,6 +927,12 @@ function renderUserList(users, query) {
       ? '<span class="badge-suspended">suspended</span>'
       : '';
 
+    // isMailboxSetup=false means the account exists in the directory but has no
+    // Gmail licence — the Gmail API will return "Mail service not enabled" for them.
+    const noGmailBadge = (!user.suspended && user.isMailboxSetup === false)
+      ? '<span class="badge-no-gmail">No Gmail</span>'
+      : '';
+
     const isActive = state.selectedUser &&
                      state.selectedUser.primaryEmail === user.primaryEmail;
 
@@ -553,6 +944,7 @@ function renderUserList(users, query) {
           '<div class="user-name text-truncate">' +
             escapeHtml((user.name && user.name.fullName) || user.primaryEmail) +
             suspendedBadge +
+            noGmailBadge +
           '</div>' +
           '<div class="user-email text-truncate">' + escapeHtml(user.primaryEmail) + '</div>' +
         '</div>' +
@@ -576,7 +968,7 @@ function renderUserList(users, query) {
 
 /**
  * Selects a user, highlights them in the sidebar, and loads their signature
- * into the Quill editor.
+ * into the editor (both the Quill and the HTML textarea are kept in sync).
  *
  * @param {object} user  User object from the Directory API.
  */
@@ -595,7 +987,23 @@ function selectUser(user) {
     (user.name && user.name.fullName) || user.primaryEmail;
   document.getElementById('selected-email').textContent = user.primaryEmail;
 
-  // Show loading badge while fetching
+  // ── Non-Gmail account: show warning and skip the API call ─────────────────
+  // isMailboxSetup=false means Gmail is not provisioned for this account.
+  // The Gmail API would return "Mail service not enabled" (400) if we tried.
+  const noGmail = user.isMailboxSetup === false;
+  document.getElementById('no-gmail-warning').style.display = noGmail ? 'flex' : 'none';
+
+  if (noGmail) {
+    // Clear the editor and leave the template intact for use with other users
+    setEditorHtml('');
+    // "Update This User" is meaningless — keep it disabled; bulk apply still works
+    document.getElementById('btn-update-user').disabled = true;
+    document.getElementById('btn-apply-all').disabled   = false;
+    document.getElementById('btn-preview').disabled     = true;
+    return;
+  }
+
+  // ── Gmail account: fetch and load the existing signature ──────────────────
   const badge = document.getElementById('loading-sig-badge');
   badge.style.display = '';
 
@@ -607,8 +1015,10 @@ function selectUser(user) {
   google.script.run
     .withSuccessHandler(function(result) {
       badge.style.display = 'none';
-      // dangerouslyPasteHTML preserves existing HTML tags from Gmail
-      quill.root.innerHTML = result.signature || '';
+
+      // Keep both editor surfaces in sync so toggling modes never loses content
+      setEditorHtml(result.signature || '');
+
       // Re-enable action buttons
       document.getElementById('btn-update-user').disabled = false;
       document.getElementById('btn-apply-all').disabled   = false;
@@ -630,7 +1040,8 @@ function selectUser(user) {
 document.getElementById('btn-update-user').addEventListener('click', function() {
   if (!state.selectedUser) return;
 
-  const html = quill.root.innerHTML;
+  // getEditorHtml() reads from whichever surface (Quill or textarea) is active
+  const html = getEditorHtml();
 
   setActionLoading(true, 'Updating signature for ' + state.selectedUser.primaryEmail + '…');
 
@@ -657,7 +1068,7 @@ document.getElementById('btn-apply-all').addEventListener('click', function() {
 document.getElementById('confirm-apply-all-btn').addEventListener('click', function() {
   bootstrap.Modal.getInstance(document.getElementById('confirm-modal')).hide();
 
-  const html = quill.root.innerHTML;
+  const html = getEditorHtml();
   setActionLoading(true, 'Applying signature to all users — please wait…');
 
   // Disable both buttons for the duration
@@ -696,8 +1107,8 @@ document.getElementById('confirm-apply-all-btn').addEventListener('click', funct
 
 /**
  * Renders the variable chip bar from the server-supplied variable definitions.
- * Clicking a chip inserts the {{variable}} token at the current cursor position
- * in the Quill editor.
+ * Clicking a chip inserts the {{variable}} token at the cursor, whether the
+ * editor is in WYSIWYG mode or raw HTML source mode.
  *
  * @param {Array<{variable:string, label:string, description:string}>} variables
  */
@@ -721,12 +1132,28 @@ function renderVariableChips(variables) {
 }
 
 /**
- * Inserts a variable token (e.g. "{{firstName}}") at the editor's current
- * cursor position, then advances the cursor past it.
+ * Inserts a variable token (e.g. "{{firstName}}") at the current cursor
+ * position in whichever editor surface is active.
+ *
+ * In HTML source mode the token is spliced into the textarea at the text
+ * cursor.  In WYSIWYG mode it is inserted via the Quill API.
  *
  * @param {string} varToken  The full placeholder text, e.g. "{{firstName}}".
  */
 function insertVariable(varToken) {
+  if (state.htmlModeActive) {
+    // Splice into the raw HTML textarea at the current text cursor position
+    const pos = htmlSourceEl.selectionStart;
+    htmlSourceEl.value =
+      htmlSourceEl.value.slice(0, pos) +
+      varToken +
+      htmlSourceEl.value.slice(htmlSourceEl.selectionEnd);
+    htmlSourceEl.selectionStart = htmlSourceEl.selectionEnd = pos + varToken.length;
+    htmlSourceEl.focus();
+    return;
+  }
+
+  // Insert into Quill at the current cursor / selection start
   quill.focus();
   const range = quill.getSelection(true); // true: focus the editor first
   quill.insertText(range.index, varToken, 'user');
@@ -740,7 +1167,7 @@ function insertVariable(varToken) {
 document.getElementById('btn-preview').addEventListener('click', function() {
   if (!state.selectedUser) return;
 
-  const htmlTemplate = quill.root.innerHTML;
+  const htmlTemplate = getEditorHtml();
   const user         = state.selectedUser;
 
   // Prepare and show the modal in loading state
@@ -788,6 +1215,11 @@ document.getElementById('btn-preview').addEventListener('click', function() {
 // ════════════════════════════════════════════════════════════════════════════
 document.getElementById('search-input').addEventListener('input', function() {
   renderUserList(state.allUsers, this.value.trim());
+});
+
+// ── "Gmail only" toggle — re-render the list immediately on change ─────────
+document.getElementById('gmail-only-toggle').addEventListener('change', function() {
+  renderUserList(state.allUsers, document.getElementById('search-input').value.trim());
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -878,7 +1310,7 @@ function getInitials(fullName) {
 }
 
 /**
- * Escapes a string for safe insertion into HTML attributes and text nodes.
+ * Escapes a string for safe insertion into HTML text nodes.
  *
  * @param {string} str
  * @returns {string}
@@ -891,6 +1323,18 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * Escapes a string for safe insertion into an HTML attribute value.
+ * Uses the same replacements as escapeHtml — kept as a named alias so
+ * call-sites make the intent obvious.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeAttr(str) {
+  return escapeHtml(str);
 }
 </script>
 </body>
