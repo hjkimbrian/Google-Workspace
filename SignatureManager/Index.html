@@ -777,7 +777,9 @@ btnHtmlMode.addEventListener('click', function () {
       state.quillDirty   = false;
     }
     quillEditorEl.style.display = 'none';
-    htmlSourceEl.style.display  = '';
+    // Must use an explicit value — '' would remove the inline style and fall
+    // back to the CSS rule `display: none`, keeping the textarea invisible.
+    htmlSourceEl.style.display  = 'block';
     htmlSourceEl.focus();
     btnHtmlMode.classList.add('active');
     btnHtmlMode.title = 'Switch back to visual editor';
@@ -790,7 +792,7 @@ btnHtmlMode.addEventListener('click', function () {
     state.quillDirty = false;
 
     htmlSourceEl.style.display  = 'none';
-    quillEditorEl.style.display = '';
+    quillEditorEl.style.display = 'block';
     quill.focus();
     btnHtmlMode.classList.remove('active');
     btnHtmlMode.title = 'Toggle HTML source view';

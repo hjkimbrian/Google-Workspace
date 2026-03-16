@@ -99,10 +99,15 @@ function getUsers(pageToken) {
   const { adminEmail, domain } = getConfig();
   const token = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
 
-  // Build query string manually for V8/Apps Script compatibility
+  // Build query string manually for V8/Apps Script compatibility.
+  //
+  // Use customer=my_customer instead of domain= so that users from ALL domains
+  // in the Workspace account are returned (primary domain + any secondary /
+  // alias domains such as strataprimedemo.com alongside demo.strataprime.com).
+  // The domain= parameter restricts results to a single domain only.
   let url =
     'https://admin.googleapis.com/admin/directory/v1/users' +
-    '?domain='     + encodeURIComponent(domain) +
+    '?customer=my_customer' +
     '&maxResults=100' +
     '&orderBy=email' +
     // Request only the fields we need to minimise response size
