@@ -357,13 +357,20 @@
         </div>
       </div>
 
-      <!-- User list -->
-      <div id="user-list">
-        <div id="empty-state">
-          <i class="bi bi-people fs-2 d-block mb-2"></i>
-          <span id="empty-state-msg">Loading users…</span>
-        </div>
+      <!--
+        Empty state — intentionally a SIBLING of #user-list, not a child.
+        If it were inside #user-list, `list.innerHTML = cards` would remove
+        it from the DOM on the first render, making getElementById return null
+        on every subsequent call and silently halting re-renders (e.g. when
+        the "Gmail only" toggle fires).
+      -->
+      <div id="empty-state">
+        <i class="bi bi-people fs-2 d-block mb-2"></i>
+        <span id="empty-state-msg">Loading users…</span>
       </div>
+
+      <!-- User list — only user cards go here; never touch #empty-state -->
+      <div id="user-list"></div>
 
       <!-- Load more -->
       <div class="p-2 border-top text-center" id="load-more-wrap" style="display:none!important">
@@ -658,6 +665,7 @@ const state = {
   selectedUser:   null, // Currently selected user object
   domain:         '',
   htmlModeActive: false, // True when the raw-HTML textarea is shown instead of Quill
+  quillDirty:     false, // True when the user has typed in Quill since the last setEditorHtml()
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -667,6 +675,20 @@ const quill = new Quill('#quill-editor', {
   modules: { toolbar: '#toolbar' },
   theme: 'snow',
   placeholder: 'Select a user on the left to load their signature…',
+});
+
+/*
+ * Track whether the user has made edits in WYSIWYG mode since the last
+ * setEditorHtml() call. This lets the HTML toggle know whether it needs to
+ * pull the latest content from quill.root.innerHTML or can trust the clean
+ * HTML string already stored in htmlSourceEl.value.
+ *
+ * Without this, toggling to HTML mode would overwrite htmlSourceEl with Quill's
+ * normalised/delta-processed version of the HTML, which can differ from the
+ * original source (e.g. Gmail's signature HTML) and appear blank in some cases.
+ */
+quill.on('text-change', function (delta, oldDelta, source) {
+  if (source === 'user') state.quillDirty = true;
 });
 
 /*
@@ -713,11 +735,26 @@ function getEditorHtml() {
 /**
  * Sets the editor contents in both modes so that toggling never loses data.
  *
+ * Uses dangerouslyPasteHTML so Quill's internal Delta state matches the
+ * visible content — direct .innerHTML assignment bypasses Delta tracking and
+ * can leave quill.root.innerHTML returning stale/empty content on read-back.
+ *
+ * htmlSourceEl.value is always set from the original `html` string (not from
+ * quill.root.innerHTML) so it retains the raw source even after Quill
+ * normalises its own representation.
+ *
  * @param {string} html
  */
 function setEditorHtml(html) {
-  quill.root.innerHTML = html;  // always keep Quill in sync
-  htmlSourceEl.value   = html;  // always keep textarea in sync
+  // Clear first, then paste — avoids Delta append issues on repeated calls
+  quill.setText('');
+  if (html) quill.clipboard.dangerouslyPasteHTML(0, html);
+
+  // Store the original source string independently of Quill's representation
+  htmlSourceEl.value = html;
+
+  // Both surfaces are freshly in sync — reset the dirty flag
+  state.quillDirty = false;
 }
 
 /*
@@ -729,15 +766,29 @@ function setEditorHtml(html) {
 btnHtmlMode.addEventListener('click', function () {
   if (!state.htmlModeActive) {
     // ── Entering HTML source mode ──────────────────────────────────────
-    htmlSourceEl.value          = quill.root.innerHTML; // export Quill → textarea
+    //
+    // Only pull from quill.root.innerHTML if the user has actually typed
+    // something in WYSIWYG mode since the last load.  If they haven't,
+    // htmlSourceEl.value already holds the original source string set by
+    // setEditorHtml() — using that avoids showing Quill's normalised/delta
+    // representation (which can differ from the raw Gmail signature HTML).
+    if (state.quillDirty) {
+      htmlSourceEl.value = quill.root.innerHTML;
+      state.quillDirty   = false;
+    }
     quillEditorEl.style.display = 'none';
     htmlSourceEl.style.display  = '';
     htmlSourceEl.focus();
     btnHtmlMode.classList.add('active');
     btnHtmlMode.title = 'Switch back to visual editor';
+
   } else {
     // ── Returning to WYSIWYG mode ──────────────────────────────────────
-    quill.root.innerHTML        = htmlSourceEl.value;   // import textarea → Quill
+    // Always import from the textarea — the user may have edited raw HTML
+    quill.setText('');
+    if (htmlSourceEl.value) quill.clipboard.dangerouslyPasteHTML(0, htmlSourceEl.value);
+    state.quillDirty = false;
+
     htmlSourceEl.style.display  = 'none';
     quillEditorEl.style.display = '';
     quill.focus();
