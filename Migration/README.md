@@ -50,6 +50,7 @@ This registers an Azure AD app, generates a certificate, and writes `MigrationCo
 | [`Get-OneDriveFileCounts/`](Get-OneDriveFileCounts/) | File counts and storage per OneDrive account | PnP.PowerShell |
 | [`Get-SPOSitePermissions/`](Get-SPOSitePermissions/) | Root + document library permissions with principal type classification (User/SPO Group/Security Group/M365 Group) | PnP.PowerShell |
 | [`Get-SPOGroupMembers/`](Get-SPOGroupMembers/) | Resolves members of SPO groups from the permissions report; optional AAD group expansion via Graph | PnP.PowerShell |
+| [`Get-AllEmailAliases/`](Get-AllEmailAliases/) | Every secondary SMTP alias across all recipient types (users, groups, shared mailboxes, public folders, contacts) — one row per alias | ExchangeOnlineManagement |
 | [`Get-ExchangeDistributionGroups/`](Get-ExchangeDistributionGroups/) | All groups with members (for recreating as Google Groups) | ExchangeOnlineManagement |
 | [`Get-M365LicenseReport/`](Get-M365LicenseReport/) | All users and assigned licenses (scope Google Workspace seats) | Microsoft.Graph |
 
@@ -108,7 +109,8 @@ The app uses **application permissions** (not delegated), so scripts run with no
 6. Run Get-SharePointFileCounts        → Identify large SPO sites → map to Shared Drives
 7. Run Get-SPOSitePermissions          → Capture root + library permissions with group type
 8. Run Get-SPOGroupMembers             → Resolve group members → assign Google Drive access
-9. Run Get-ExchangeDistributionGroups  → Export groups → bulk-create Google Groups
+9. Run Get-AllEmailAliases             → Full alias inventory → configure Gmail/Group aliases + check for duplicates
+10. Run Get-ExchangeDistributionGroups → Export groups → bulk-create Google Groups
 ```
 
 ---
