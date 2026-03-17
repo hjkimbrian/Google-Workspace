@@ -41,6 +41,7 @@ PowerShell scripts for inventorying a Microsoft 365 tenant before migrating to G
 | [`Migration/Get-OneDriveFileCounts/`](Migration/Get-OneDriveFileCounts/) | Count files and storage usage per OneDrive for Business account |
 | [`Migration/Get-SPOSitePermissions/`](Migration/Get-SPOSitePermissions/) | Root + document library permissions with principal type classification |
 | [`Migration/Get-SPOGroupMembers/`](Migration/Get-SPOGroupMembers/) | Resolve SPO group members; optional Azure AD group expansion |
+| [`Migration/Get-AllEmailAliases/`](Migration/Get-AllEmailAliases/) | Every secondary SMTP alias across all recipient types — one row per alias, with duplicate detection |
 | [`Migration/Get-ExchangeDistributionGroups/`](Migration/Get-ExchangeDistributionGroups/) | Export all distribution groups with members (for recreating as Google Groups) |
 | [`Migration/Get-M365LicenseReport/`](Migration/Get-M365LicenseReport/) | Export all users and their M365 licenses (scope Google Workspace seats) |
 
