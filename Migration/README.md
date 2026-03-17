@@ -43,9 +43,13 @@ This registers an Azure AD app, generates a certificate, and writes `MigrationCo
 | Script | Description | Module Required |
 |---|---|---|
 | [`Setup-PnPCertAuth/`](Setup-PnPCertAuth/) | Register Azure AD app with cert auth — run this first | PnP.PowerShell |
-| [`Get-ExchangeMailboxStats/`](Get-ExchangeMailboxStats/) | Mailbox list with message counts and sizes | ExchangeOnlineManagement |
+| [`Get-ExchangeMailboxStats/`](Get-ExchangeMailboxStats/) | Mailbox list with message counts, sizes, and Online Archive item counts | ExchangeOnlineManagement |
+| [`Get-MailboxPermissions/`](Get-MailboxPermissions/) | Full Access + Send As + Send on Behalf for Shared/Room/Equipment mailboxes; resource inventory CSV | ExchangeOnlineManagement |
+| [`Get-PublicFolderStats/`](Get-PublicFolderStats/) | Top-level mail-enabled public folders: message counts, sizes, and permissions | ExchangeOnlineManagement |
 | [`Get-SharePointFileCounts/`](Get-SharePointFileCounts/) | File counts and storage per SharePoint site | PnP.PowerShell |
 | [`Get-OneDriveFileCounts/`](Get-OneDriveFileCounts/) | File counts and storage per OneDrive account | PnP.PowerShell |
+| [`Get-SPOSitePermissions/`](Get-SPOSitePermissions/) | Root + document library permissions with principal type classification (User/SPO Group/Security Group/M365 Group) | PnP.PowerShell |
+| [`Get-SPOGroupMembers/`](Get-SPOGroupMembers/) | Resolves members of SPO groups from the permissions report; optional AAD group expansion via Graph | PnP.PowerShell |
 | [`Get-ExchangeDistributionGroups/`](Get-ExchangeDistributionGroups/) | All groups with members (for recreating as Google Groups) | ExchangeOnlineManagement |
 | [`Get-M365LicenseReport/`](Get-M365LicenseReport/) | All users and assigned licenses (scope Google Workspace seats) | Microsoft.Graph |
 
@@ -96,11 +100,15 @@ The app uses **application permissions** (not delegated), so scripts run with no
 ## Typical Migration Workflow
 
 ```
-1. Run Get-M365LicenseReport     → Count licensed users → order Google Workspace seats
-2. Run Get-ExchangeMailboxStats  → Size email data → plan migration waves
-3. Run Get-OneDriveFileCounts    → Size file data → estimate Drive migration time
-4. Run Get-SharePointFileCounts  → Identify large SPO sites → map to Shared Drives
-5. Run Get-ExchangeDistributionGroups → Export groups → bulk-create Google Groups
+1. Run Get-M365LicenseReport          → Count licensed users → order Google Workspace seats
+2. Run Get-ExchangeMailboxStats        → Size email + archive data → plan migration waves
+3. Run Get-MailboxPermissions          → Delegate access for shared/room/equipment mailboxes
+4. Run Get-PublicFolderStats           → Mail-enabled public folders → decide: Groups, shared Gmail, or archive
+5. Run Get-OneDriveFileCounts          → Size OneDrive data → estimate Drive migration time
+6. Run Get-SharePointFileCounts        → Identify large SPO sites → map to Shared Drives
+7. Run Get-SPOSitePermissions          → Capture root + library permissions with group type
+8. Run Get-SPOGroupMembers             → Resolve group members → assign Google Drive access
+9. Run Get-ExchangeDistributionGroups  → Export groups → bulk-create Google Groups
 ```
 
 ---

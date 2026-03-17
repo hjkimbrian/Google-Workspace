@@ -15,9 +15,12 @@ Exports a detailed CSV inventory of all Exchange Online mailboxes including mess
 | `DeletedItemCount` | Items in Deleted Items / Recoverable Items |
 | `DeletedSizeMB` | Size of deleted items |
 | `LastLogonTime` | Last time a user logged in |
-| `IsArchiveEnabled` | Whether In-Place Archive is enabled |
+| `IsArchiveEnabled` | Whether In-Place Archive (Online Archive) is enabled |
 | `LitigationHoldEnabled` | Whether the mailbox is on Litigation Hold |
-| `ArchiveItemCount` / `ArchiveSizeGB` | Archive mailbox stats (if enabled) |
+| `ArchiveItemCount` | **Message count in the Online Archive mailbox** (populated when `IsArchiveEnabled = True`) |
+| `ArchiveSizeGB` | Storage used by the Online Archive mailbox |
+
+> **Online Archive note**: `ArchiveItemCount` and `ArchiveSizeGB` are fetched via a second `Get-EXOMailboxStatistics -Archive` call per mailbox. This means the primary mailbox item count (`TotalItemCount`) and the archive item count are reported separately — add them together for the total messages that need to be migrated for each user. Typically archive content is migrated last or to a separate Vault-based archive in Google Workspace.
 
 ### Mailbox Types
 
@@ -112,7 +115,9 @@ Grand total size: 530.70 GB
 
 ## Tips for Migration Sizing
 
-- **Users over 25 GB**: Google Workspace migration tools (GWMME, GAMADV-XTD3) work better with smaller mailboxes; consider archiving or phased migration
-- **Litigation Hold**: These mailboxes cannot be deleted from Exchange until hold is released
+- **Online Archive**: `ArchiveItemCount` + `TotalItemCount` = total messages to migrate per user. Users with large archives may need phased or parallel migration waves
+- **Archive-only migration**: Google Vault can be used to hold migrated archive content separately from Gmail — useful when archive data is old but legally required
+- **Users over 25 GB (primary + archive combined)**: Google Workspace migration tools (GWMME, GAMADV-XTD3) work better with smaller mailboxes; consider phased waves
+- **Litigation Hold**: These mailboxes cannot be deleted from Exchange until the hold is released; coordinate with legal before migration
 - **Inactive mailboxes**: May need to be recovered before migrating if content is required
-- **Shared mailboxes**: Decide whether to convert to Google Groups (collaboration) or individual accounts
+- **Shared mailboxes**: Decide whether to convert to Google Groups (collaboration) or individual accounts; see [`Get-MailboxPermissions`](../Get-MailboxPermissions/) for delegate access details

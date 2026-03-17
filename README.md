@@ -34,9 +34,13 @@ PowerShell scripts for inventorying a Microsoft 365 tenant before migrating to G
 | Directory | Description |
 |-----------|-------------|
 | [`Migration/Setup-PnPCertAuth/`](Migration/Setup-PnPCertAuth/) | One-time Azure AD App Registration with certificate auth — run this first |
-| [`Migration/Get-ExchangeMailboxStats/`](Migration/Get-ExchangeMailboxStats/) | Export mailbox list with message counts and storage sizes |
+| [`Migration/Get-ExchangeMailboxStats/`](Migration/Get-ExchangeMailboxStats/) | Mailbox list with message counts, sizes, and Online Archive item counts |
+| [`Migration/Get-MailboxPermissions/`](Migration/Get-MailboxPermissions/) | Full Access + Send As + Send on Behalf for Shared/Room/Equipment mailboxes; resource inventory |
+| [`Migration/Get-PublicFolderStats/`](Migration/Get-PublicFolderStats/) | Top-level mail-enabled public folders with message counts and permissions |
 | [`Migration/Get-SharePointFileCounts/`](Migration/Get-SharePointFileCounts/) | Count files and storage usage per SharePoint Online site collection |
 | [`Migration/Get-OneDriveFileCounts/`](Migration/Get-OneDriveFileCounts/) | Count files and storage usage per OneDrive for Business account |
+| [`Migration/Get-SPOSitePermissions/`](Migration/Get-SPOSitePermissions/) | Root + document library permissions with principal type classification |
+| [`Migration/Get-SPOGroupMembers/`](Migration/Get-SPOGroupMembers/) | Resolve SPO group members; optional Azure AD group expansion |
 | [`Migration/Get-ExchangeDistributionGroups/`](Migration/Get-ExchangeDistributionGroups/) | Export all distribution groups with members (for recreating as Google Groups) |
 | [`Migration/Get-M365LicenseReport/`](Migration/Get-M365LicenseReport/) | Export all users and their M365 licenses (scope Google Workspace seats) |
 
