@@ -34,7 +34,7 @@ const SCOPE_GMAIL_SETTINGS_ =
  */
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Gmail Signature Manager')
+    .setTitle('GWS Admin Toolkit')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -477,15 +477,16 @@ function getDataTransferApplications() {
 }
 
 /**
- * Creates a data transfer from one user to another for a given application.
+ * Creates a data transfer from one user to another, covering one or more
+ * applications in a single request.
  *
- * @param {string} fromEmail       Source user's primary email address.
- * @param {string} toEmail         Destination user's primary email address.
- * @param {string} applicationId   Application ID from getDataTransferApplications().
- * @param {Array}  transferParams  Array of { key: string, value: string[] } objects.
+ * @param {string} fromEmail    Source user's primary email address.
+ * @param {string} toEmail      Destination user's primary email address.
+ * @param {Array}  appTransfers Array of { applicationId: string, params: Array<{key,value}> }
+ *                              — one entry per selected service (Drive, Calendar, Looker Studio).
  * @returns {object} The created DataTransfer resource from the API.
  */
-function createDataTransfer(fromEmail, toEmail, applicationId, transferParams) {
+function createDataTransfer(fromEmail, toEmail, appTransfers) {
   const { adminEmail } = getConfig();
 
   // Obtain both tokens up front; each JWT exchange counts against quota.
@@ -499,12 +500,12 @@ function createDataTransfer(fromEmail, toEmail, applicationId, transferParams) {
   const payload = {
     oldOwnerUserId: fromId,
     newOwnerUserId: toId,
-    applicationDataTransfers: [
-      {
-        applicationId:             String(applicationId),
-        applicationTransferParams: transferParams || []
-      }
-    ]
+    applicationDataTransfers: (appTransfers || []).map(function(at) {
+      return {
+        applicationId:             String(at.applicationId),
+        applicationTransferParams: at.params || []
+      };
+    })
   };
 
   const response = UrlFetchApp.fetch(

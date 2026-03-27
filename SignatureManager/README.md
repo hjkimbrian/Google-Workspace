@@ -1,21 +1,41 @@
-# Gmail Signature Manager
+# GWS Admin Toolkit
 
-A Google Apps Script web app that lets Google Workspace admins view and update Gmail signatures for individual users or the entire domain — directly in the browser, with a WYSIWYG rich-text editor.
+A Google Apps Script web app for Google Workspace super admins. Provides two tools in a single deployment:
+
+- **Signatures** — view and update Gmail signatures for individual users or the entire domain, with a WYSIWYG rich-text editor and template variables.
+- **Data Transfer** — transfer Google Drive files, Calendar data, and Looker Studio reports from one user account to another using the Google Workspace Data Transfer API.
+
+---
 
 ## Features
 
-- **User list** — browse all domain users (paginated, with live search)
+### Signatures
+
+- **User list** — browse all domain users (paginated, with live search and Gmail-only filter)
 - **Load signature** — fetch any user's current Gmail signature into the editor
 - **WYSIWYG editor** — rich-text formatting (bold, italic, font, colour, links, images, lists, alignment)
-- **Template variables** — insert `{{firstName}}`, `{{email}}`, etc. via one-click chips; each user's Directory profile is fetched at save time to personalise their signature automatically
-- **Preview** — render the template with a specific user's real data before committing
+- **HTML source mode** — toggle between visual editor and raw HTML textarea
+- **Template variables** — insert `{{firstName}}`, `{{email}}`, etc. via one-click chips; each user's Directory profile is fetched at save time to personalise the signature
+- **Preview** — render the template with a specific user's real data before saving
 - **Update one user** — save the rendered signature for the selected user only
-- **Apply to all** — push a personalised, variable-substituted signature to every active user in the domain
-- **Secure credentials** — the service account private key is stored in Script Properties, never in source code
+- **Apply to all** — push a personalised signature to every active user in the domain
+
+### Data Transfer
+
+- **Multi-service transfers** — select any combination of Google Drive, Google Calendar, and Looker Studio in a single transfer request
+- **Autocomplete user picker** — source and destination inputs use the same domain user list loaded by the Signatures tab
+- **Service-specific options** (radio buttons):
+  - **Drive**: All files / Private only / Shared only (`PRIVACY_LEVEL` parameter)
+  - **Calendar**: Release or keep calendar resources (`RELEASE_RESOURCES` parameter)
+  - **Looker Studio**: no additional parameters required
+- **Transfer history** — each submitted transfer appears as a card with per-service status badges
+- **Refresh status** — poll the Data Transfer API for updated status without leaving the page
+
+---
 
 ## Supported template variables
 
-Insert these placeholders into your signature template. They are replaced with each user's live data from the Admin Directory API at save time.
+Insert these placeholders into signature templates. They are replaced with each user's live data from the Admin Directory API at save time.
 
 | Variable | Source field | Example value |
 |---|---|---|
@@ -29,15 +49,7 @@ Insert these placeholders into your signature template. They are replaced with e
 | `{{department}}` | `organizations[primary].department` | `Engineering` |
 | `{{company}}` | `organizations[primary].name` | `Acme Corp` |
 
-Missing fields are silently replaced with an empty string — no `{{placeholder}}` text will ever appear in a sent signature.
-
-**Example template:**
-```
-<b>{{fullName}}</b><br>
-{{jobTitle}} · {{department}}<br>
-{{email}} | {{workPhone}}<br>
-{{company}}
-```
+Missing fields are silently replaced with an empty string.
 
 ---
 
@@ -53,19 +65,22 @@ Missing fields are silently replaced with an empty string — no `{{placeholder}
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
 2. Create a new project (or select an existing one).
-3. Note the **project number** — you'll need it when linking to Apps Script.
+3. Note the **project number** — you will need it when linking to Apps Script.
 
 ---
 
 ## Step 2 — Enable required APIs
 
-In your GCP project, enable these two APIs:
+In your GCP project, enable these APIs:
 
 1. **Admin SDK API**
-   - Navigation: *APIs & Services → Library → search "Admin SDK API" → Enable*
+   - *APIs & Services → Library → search "Admin SDK API" → Enable*
 
 2. **Gmail API**
-   - Navigation: *APIs & Services → Library → search "Gmail API" → Enable*
+   - *APIs & Services → Library → search "Gmail API" → Enable*
+
+3. **Admin Data Transfer API** *(required for the Data Transfer tab)*
+   - *APIs & Services → Library → search "Admin SDK API"* — the Data Transfer API is part of the Admin SDK and is enabled alongside it. If you see it listed separately as "Data Transfer API", enable it too.
 
 ---
 
@@ -74,21 +89,21 @@ In your GCP project, enable these two APIs:
 ### 3a — Create the service account
 
 1. Navigate to *IAM & Admin → Service Accounts → Create Service Account*.
-2. Give it a descriptive name, e.g. `signature-manager`.
-3. Skip the optional role and user access steps — click **Done**.
+2. Give it a descriptive name, e.g. `gws-admin-toolkit`.
+3. Skip the optional role and user access steps → click **Done**.
 
 ### 3b — Create and download a JSON key
 
 1. Click the newly created service account → **Keys** tab → **Add Key → Create new key**.
 2. Select **JSON** → **Create**.
-3. A `.json` file is downloaded — keep it safe. You will paste its contents into Script Properties in Step 6, then **delete the file**.
+3. A `.json` file is downloaded — keep it safe. You will paste its entire contents into Script Properties in Step 6, then **delete the local file**.
 
 ### 3c — Enable domain-wide delegation
 
 1. In the service account detail page, click **Edit** (pencil icon).
 2. Expand *Advanced settings* → check **Enable Google Workspace Domain-wide Delegation**.
 3. Click **Save**.
-4. Note the **Client ID** shown under the service account (a numeric string).
+4. Note the **Client ID** (a numeric string) shown under the service account.
 
 ---
 
@@ -98,44 +113,44 @@ In your GCP project, enable these two APIs:
 2. Navigate to *Security → Access and data control → API controls → Manage Domain-Wide Delegation*.
 3. Click **Add new**.
 4. Enter the **Client ID** from Step 3c.
-5. Paste the following scopes (comma-separated) into the OAuth scopes field:
+5. Paste the following scopes (comma-separated):
 
 ```
 https://www.googleapis.com/auth/admin.directory.user.readonly,
-https://www.googleapis.com/auth/gmail.settings.basic
+https://www.googleapis.com/auth/gmail.settings.basic,
+https://www.googleapis.com/auth/admin.datatransfer
 ```
 
 6. Click **Authorise**.
 
 > **Why these scopes?**
-> - `admin.directory.user.readonly` — lets the app list users via the Admin Directory API, impersonating your admin account.
-> - `gmail.settings.basic` — lets the app read and write Gmail send-as settings (including signatures), impersonating individual users.
+> - `admin.directory.user.readonly` — lists domain users and resolves user IDs for the Data Transfer API.
+> - `gmail.settings.basic` — reads and writes Gmail send-as settings (signatures).
+> - `admin.datatransfer` — creates and monitors data transfers between users.
 
 ---
 
 ## Step 5 — Create the Apps Script project
 
 1. Go to [script.google.com](https://script.google.com) → **New project**.
-2. Rename the project (e.g. *Gmail Signature Manager*).
+2. Rename the project, e.g. *GWS Admin Toolkit*.
 
 ### 5a — Link your GCP project
-
-This is required so the script can use the APIs enabled in Step 2.
 
 1. In the Apps Script editor: *Project Settings* (gear icon) → **Change project** under *Google Cloud Platform (GCP) Project*.
 2. Enter your GCP **project number** from Step 1 → **Set project**.
 
 ### 5b — Create the script files
 
-Create four files in the editor — one for each file in this folder:
+Create three files in the editor — one for each file in this folder:
 
-| Apps Script file | Source file in this repo         |
-|------------------|----------------------------------|
-| `Code.gs`        | `SignatureManager/Code.gs`       |
-| `Auth.gs`        | `SignatureManager/Auth.gs`       |
-| `Index.html`     | `SignatureManager/Index.html`    |
+| Apps Script file | Source file in this repo |
+|------------------|--------------------------|
+| `Code.gs` | `SignatureManager/Code.gs` |
+| `Auth.gs` | `SignatureManager/Auth.gs` |
+| `Index.html` | `SignatureManager/Index.html` |
 
-> To create a new file: click the **+** button next to *Files* in the left panel.
+> To create a new file: click the **+** button next to *Files*.
 > For `.gs` files choose *Script*; for `.html` choose *HTML*.
 > Paste the contents of each source file exactly as written.
 
@@ -143,16 +158,16 @@ Create four files in the editor — one for each file in this folder:
 
 ## Step 6 — Store credentials in Script Properties
 
-Script Properties are encrypted at rest and are never visible in source code.
+Script Properties are encrypted at rest and never visible in source code.
 
 1. In the Apps Script editor: *Project Settings* (gear icon) → scroll to **Script Properties** → **Add script property**.
 2. Add the following three properties:
 
-| Property name         | Value                                                        |
-|-----------------------|--------------------------------------------------------------|
-| `SERVICE_ACCOUNT_KEY` | The **entire contents** of the JSON key file from Step 3b.  |
-| `ADMIN_EMAIL`         | Your super admin email, e.g. `admin@example.com`            |
-| `DOMAIN`              | Your primary domain, e.g. `example.com`                     |
+| Property name | Value |
+|---|---|
+| `SERVICE_ACCOUNT_KEY` | The **entire contents** of the JSON key file from Step 3b. |
+| `ADMIN_EMAIL` | Your super admin email, e.g. `admin@example.com` |
+| `DOMAIN` | Your primary domain, e.g. `example.com` |
 
 3. Click **Save script properties**.
 4. **Delete the downloaded JSON key file** from your computer — it is now stored securely in Script Properties.
@@ -165,10 +180,10 @@ Script Properties are encrypted at rest and are never visible in source code.
 2. Click the gear icon next to *Select type* → choose **Web app**.
 3. Configure:
    - **Description** — e.g. `v1`
-   - **Execute as** — `Me (owner)` *(the service account calls are made server-side as the script owner)*
-   - **Who has access** — `Anyone within [your domain]` *(restricts access to Workspace accounts in your domain)*
+   - **Execute as** — `Me (owner)`
+   - **Who has access** — `Anyone within [your domain]`
 4. Click **Deploy**.
-5. Copy the **Web app URL** shown — share this URL with other admins.
+5. Copy the **Web app URL** — share this with other admins in your domain.
 
 > **Re-deploying after changes:** use *Deploy → Manage deployments → Edit* (pencil) → bump the version number → **Deploy**.
 
@@ -176,13 +191,32 @@ Script Properties are encrypted at rest and are never visible in source code.
 
 ## Usage
 
-1. Open the web app URL.
-2. The left panel lists all users in your domain. Use the search box to filter.
+### Signatures tab
+
+1. Open the web app URL and click the **Signatures** tab (active by default).
+2. Use the left panel to browse and search domain users.
 3. Click a user to load their current signature into the editor.
-4. Edit the signature using the rich-text toolbar.
-5. Click one of:
-   - **Update This User** — saves the signature for the selected user only.
-   - **Apply to All Users** — pushes the signature to every active user in the domain (a confirmation dialog will appear first).
+4. Edit the signature using the rich-text toolbar, or toggle to raw HTML mode with `</>`.
+5. Use the **Insert variable** chips to add personalisation tokens.
+6. Click:
+   - **Update This User** — saves for the selected user only.
+   - **Apply to All Users** — pushes the signature to every active Gmail user in the domain (confirmation dialog first).
+   - **Preview** — renders the template with the selected user's real Directory data.
+
+### Data Transfer tab
+
+1. Click the **Data Transfer** tab in the navigation.
+2. **From** — type or select the source user's email address.
+3. **To** — type or select the destination user's email address.
+4. **Service** — click one or more service buttons (Drive, Calendar, Looker Studio). Multiple services can be selected for a single transfer request.
+5. **Options** — configure service-specific settings as needed:
+   - Drive: choose which files to transfer (all, private only, or shared only).
+   - Calendar: choose whether to release calendar resources.
+6. Click **Create Transfer**.
+7. The transfer appears in the **Transfer History** section with per-service status badges.
+8. Click **Refresh** on any card to poll the API for updated status.
+
+> Data transfers are processed asynchronously by Google. Status will show `inProgress` immediately after creation and update to `completed` once finished (typically within minutes to hours depending on data volume).
 
 ---
 
@@ -192,28 +226,34 @@ Script Properties are encrypted at rest and are never visible in source code.
 You skipped or did not save Step 6. Verify the property name is exactly `SERVICE_ACCOUNT_KEY`.
 
 ### "Token exchange failed: unauthorized_client"
-Domain-wide delegation is not configured correctly. Double-check:
+Domain-wide delegation is not configured correctly. Check:
 - The service account has **DWD enabled** (Step 3c).
-- The correct **Client ID** and both **OAuth scopes** are authorised in the Admin Console (Step 4).
+- The correct **Client ID** and all three **OAuth scopes** are authorised in the Admin Console (Step 4).
 - The GCP project linked in Apps Script is the same project that owns the service account (Step 5a).
 
 ### "Directory API error (403)"
-The `ADMIN_EMAIL` account does not have super admin rights, or the Admin SDK API is not enabled (Step 2).
+The `ADMIN_EMAIL` does not have super admin rights, or the Admin SDK API is not enabled (Step 2).
+
+### "Data Transfer applications API error (403)"
+The `admin.datatransfer` scope is missing from DWD authorisation (Step 4), or the Admin Data Transfer API is not enabled on the GCP project (Step 2).
+
+### "Transfer creation failed" — service app ID not found
+The Data Transfer page loads available applications from the API when you first visit the tab. If a service button shows no app ID in the warning, ensure the Data Transfer API is enabled and the `admin.datatransfer` DWD scope is authorised, then reload the page.
 
 ### "Apply to All" times out for large domains
-Apps Script has a **6-minute execution limit**. For domains with many hundreds of users, the bulk update may not complete in a single run. Workarounds:
-- Run the update during off-peak hours so each API call returns faster.
-- Consider splitting users alphabetically across multiple manual runs using the *Update This User* button.
-- For very large domains, export the script logic to a Cloud Run job or use the [Gmail API batch endpoint](https://developers.google.com/workspace/gmail/api/guides/batch).
+Apps Script has a **6-minute execution limit**. For domains with many hundreds of users, the bulk signature update may not complete in a single run. Workarounds:
+- Run during off-peak hours so each API call returns faster.
+- Split users across multiple manual runs using **Update This User**.
+- For very large domains, consider exporting the logic to a Cloud Run job or using the [Gmail API batch endpoint](https://developers.google.com/workspace/gmail/api/guides/batch).
 
-### Signature HTML is simplified after editing
-Quill's editor normalises some complex HTML (e.g. inline `style` attributes for custom fonts). If your existing signatures use advanced HTML, consider using the Quill editor for new, standardised signatures and testing the output before applying to all users.
+### Signature HTML is simplified after WYSIWYG editing
+Quill normalises some complex HTML. Use the `</>` HTML source mode to paste or edit signatures that rely on advanced inline styles.
 
 ---
 
 ## Security notes
 
 - The service account private key is stored **only** in Script Properties — never in source code or version control.
-- The web app executes **as the owner** (admin who deployed it), but individual user impersonation happens server-side via domain-wide delegation.
-- Access is restricted to **domain users only** via the deployment setting.
-- After downloading the JSON key in Step 3b, delete the local file immediately once you've saved it to Script Properties.
+- The web app executes **as the owner** (the admin who deployed it), with individual user impersonation happening server-side via domain-wide delegation.
+- Access is restricted to **domain users only** via the deployment setting (*Anyone within [your domain]*).
+- Delete the local `.json` key file immediately after saving it to Script Properties.
