@@ -114,7 +114,7 @@ function getUsers(pageToken) {
     '&fields=' + encodeURIComponent(
       // isMailboxSetup = true only for accounts that have Gmail provisioned;
       // we surface this in the sidebar so admins can filter non-Gmail accounts.
-      'users(primaryEmail,name/fullName,thumbnailPhotoUrl,suspended,isMailboxSetup),' +
+      'users(primaryEmail,name/fullName,thumbnailPhotoUrl,suspended,isMailboxSetup,orgUnitPath),' +
       'nextPageToken'
     );
 
@@ -443,6 +443,24 @@ function substituteVariables_(template, vars) {
 const SCOPE_DATATRANSFER_ =
   'https://www.googleapis.com/auth/admin.datatransfer';
 
+// ─── Delegation & Calendar scopes ─────────────────────────────────────────────
+
+/** Scope for managing Gmail delegates (settings.sharing includes read+write). */
+const SCOPE_GMAIL_DELEGATION_  =
+  'https://www.googleapis.com/auth/gmail.settings.sharing';
+
+/** Scope for managing Google Calendar ACLs on behalf of users. */
+const SCOPE_CALENDAR_ =
+  'https://www.googleapis.com/auth/calendar';
+
+/** Scope for reading organisational unit records from the Directory API. */
+const SCOPE_DIRECTORY_ORGUNIT_ =
+  'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
+
+/** Scope for reading policies via the Cloud Identity Policy API. */
+const SCOPE_CLOUD_IDENTITY_POLICIES_ =
+  'https://www.googleapis.com/auth/cloud-identity.policies';
+
 /**
  * Returns the list of applications available for data transfer in this domain.
  * The frontend uses the returned app IDs when calling createDataTransfer().
@@ -592,4 +610,351 @@ function getUserId_(email, dirToken) {
   }
 
   return JSON.parse(response.getContentText()).id;
+}
+
+// ─── Mail Delegation ──────────────────────────────────────────────────────────
+
+/**
+ * Returns the current Gmail delegates for a user and the delegation policy
+ * status for their organisational unit.
+ *
+ * @param {string}      userEmail    User whose delegates to list.
+ * @param {string|null} orgUnitPath  User's OU path (from Directory API).
+ *                                   Pass null to skip the policy check.
+ * @returns {{ delegates: Array, delegationAllowed: boolean|null, policyNote: string|null }}
+ */
+function getDelegates(userEmail, orgUnitPath) {
+  const token = getServiceAccountToken_(userEmail, [SCOPE_GMAIL_DELEGATION_]);
+
+  const response = UrlFetchApp.fetch(
+    'https://gmail.googleapis.com/gmail/v1/users/' +
+    encodeURIComponent(userEmail) + '/settings/delegates',
+    {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error(
+      'Gmail Delegates API error (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  const data = JSON.parse(response.getContentText());
+
+  var policyResult = { allowed: null, note: null };
+  if (orgUnitPath) {
+    try {
+      policyResult = checkMailDelegationPolicy(orgUnitPath);
+    } catch (e) {
+      policyResult = { allowed: null, note: 'Could not check policy: ' + e.message };
+    }
+  }
+
+  return {
+    delegates:         data.delegates || [],
+    delegationAllowed: policyResult.allowed,
+    policyNote:        policyResult.note
+  };
+}
+
+/**
+ * Adds a delegate to a user's Gmail account.
+ *
+ * @param {string} userEmail     User who is granting delegation access.
+ * @param {string} delegateEmail The email address to add as a delegate.
+ * @returns {object} The created delegate resource.
+ */
+function addDelegate(userEmail, delegateEmail) {
+  const token = getServiceAccountToken_(userEmail, [SCOPE_GMAIL_DELEGATION_]);
+
+  const response = UrlFetchApp.fetch(
+    'https://gmail.googleapis.com/gmail/v1/users/' +
+    encodeURIComponent(userEmail) + '/settings/delegates',
+    {
+      method: 'POST',
+      headers: {
+        Authorization:  'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({ delegateEmail: delegateEmail }),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200 && response.getResponseCode() !== 201) {
+    throw new Error(
+      'Failed to add delegate (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  return JSON.parse(response.getContentText());
+}
+
+/**
+ * Removes a delegate from a user's Gmail account.
+ *
+ * @param {string} userEmail     User who owns the mailbox.
+ * @param {string} delegateEmail The delegate address to remove.
+ * @returns {{ success: boolean }}
+ */
+function removeDelegate(userEmail, delegateEmail) {
+  const token = getServiceAccountToken_(userEmail, [SCOPE_GMAIL_DELEGATION_]);
+
+  const response = UrlFetchApp.fetch(
+    'https://gmail.googleapis.com/gmail/v1/users/' +
+    encodeURIComponent(userEmail) + '/settings/delegates/' +
+    encodeURIComponent(delegateEmail),
+    {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200 && response.getResponseCode() !== 204) {
+    throw new Error(
+      'Failed to remove delegate (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  return { success: true };
+}
+
+/**
+ * Resolves the mail delegation policy for an organisational unit using the
+ * Cloud Identity Policy API (cloudidentity.googleapis.com/v1/policies).
+ *
+ * Flow:
+ *   1. Look up the OU's immutable ID via the Admin Directory API.
+ *   2. GET /v1/policies filtered by the mail_delegation setting type and OU.
+ *
+ * @param {string} orgUnitPath  OU path as returned by the Directory API (e.g. "/Sales").
+ * @returns {{ allowed: boolean|null, orgUnitId: string, note: string|null }}
+ */
+function checkMailDelegationPolicy(orgUnitPath) {
+  const { adminEmail } = getConfig();
+
+  // Step 1 — resolve OU path → OU ID via Directory API
+  const dirToken = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_ORGUNIT_]);
+
+  const cleanPath = orgUnitPath.replace(/^\//, ''); // strip leading slash
+  const ouResp = UrlFetchApp.fetch(
+    'https://admin.googleapis.com/admin/directory/v1/customer/my_customer/orgunits/' +
+    encodeURIComponent(cleanPath),
+    {
+      headers: { Authorization: 'Bearer ' + dirToken },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (ouResp.getResponseCode() !== 200) {
+    return {
+      allowed: null,
+      orgUnitId: '',
+      note: 'Could not resolve OU: ' + ouResp.getContentText()
+    };
+  }
+
+  var orgUnitId = (JSON.parse(ouResp.getContentText()).orgUnitId || '').replace(/^id:/, '');
+  if (!orgUnitId) {
+    return { allowed: null, orgUnitId: '', note: 'OU ID not found.' };
+  }
+
+  // Step 2 — query Cloud Identity Policy API for mail delegation setting on this OU.
+  // Filter matches any setting type containing "mail_delegation" for resilience against
+  // namespace changes (e.g. gmail.mail_delegation vs workspace.gmail.mail_delegation).
+  const policyToken = getServiceAccountToken_(adminEmail, [SCOPE_CLOUD_IDENTITY_POLICIES_]);
+
+  const filter =
+    'setting.type.matches(\'.*mail_delegation\')' +
+    ' && policyQuery.orgUnit=="orgUnits/' + orgUnitId + '"';
+
+  const policyResp = UrlFetchApp.fetch(
+    'https://cloudidentity.googleapis.com/v1/policies' +
+    '?filter=' + encodeURIComponent(filter),
+    {
+      headers: { Authorization: 'Bearer ' + policyToken },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (policyResp.getResponseCode() !== 200) {
+    return {
+      allowed: null,
+      orgUnitId: orgUnitId,
+      note: 'Policy API error: ' + policyResp.getContentText()
+    };
+  }
+
+  const policyData = JSON.parse(policyResp.getContentText());
+  const policies   = policyData.policies || [];
+
+  if (policies.length === 0) {
+    return {
+      allowed: null,
+      orgUnitId: orgUnitId,
+      note: 'No explicit policy set (inheriting from parent OU).'
+    };
+  }
+
+  // Parse the setting value — try common field names for the delegation boolean.
+  var allowed = null;
+  for (var i = 0; i < policies.length; i++) {
+    var val = policies[i].setting && policies[i].setting.value;
+    if (!val) continue;
+
+    if (typeof val.mailDelegationEnabled !== 'undefined') {
+      allowed = !!val.mailDelegationEnabled;
+      break;
+    }
+    if (typeof val.enableMailDelegation !== 'undefined') {
+      allowed = !!val.enableMailDelegation;
+      break;
+    }
+    // Fallback: first boolean field in the value object
+    var keys = Object.keys(val);
+    for (var j = 0; j < keys.length; j++) {
+      if (typeof val[keys[j]] === 'boolean') {
+        allowed = val[keys[j]];
+        break;
+      }
+    }
+    if (allowed !== null) break;
+  }
+
+  return { allowed: allowed, orgUnitId: orgUnitId, note: null };
+}
+
+// ─── Calendar ACL ─────────────────────────────────────────────────────────────
+
+/**
+ * Checks whether Google Calendar is enabled for a user by attempting to fetch
+ * their primary calendar resource.
+ *
+ * @param {string} userEmail
+ * @returns {{ enabled: boolean, summary: string }}
+ */
+function getCalendarStatus(userEmail) {
+  try {
+    const token = getServiceAccountToken_(userEmail, [SCOPE_CALENDAR_]);
+
+    const response = UrlFetchApp.fetch(
+      'https://www.googleapis.com/calendar/v3/calendars/primary',
+      {
+        headers: { Authorization: 'Bearer ' + token },
+        muteHttpExceptions: true
+      }
+    );
+
+    if (response.getResponseCode() !== 200) {
+      return { enabled: false, summary: '' };
+    }
+
+    const data = JSON.parse(response.getContentText());
+    return { enabled: true, summary: data.summary || userEmail };
+  } catch (e) {
+    return { enabled: false, summary: '' };
+  }
+}
+
+/**
+ * Returns the ACL entries for a user's primary calendar.
+ *
+ * @param {string} ownerEmail  Calendar owner's email address.
+ * @returns {{ items: Array }}
+ */
+function getCalendarAcl(ownerEmail) {
+  const token = getServiceAccountToken_(ownerEmail, [SCOPE_CALENDAR_]);
+
+  const response = UrlFetchApp.fetch(
+    'https://www.googleapis.com/calendar/v3/calendars/primary/acl',
+    {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error(
+      'Calendar ACL API error (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  const data = JSON.parse(response.getContentText());
+  return { items: data.items || [] };
+}
+
+/**
+ * Adds a user-scoped ACL entry to the owner's primary calendar.
+ * sendNotifications is always set to false — no email is sent to the grantee.
+ *
+ * @param {string} ownerEmail    Calendar owner's email address.
+ * @param {string} granteeEmail  User to share the calendar with.
+ * @param {string} role          One of: freeBusyReader, reader, writer.
+ * @returns {object} The created AclRule resource.
+ */
+function addCalendarAcl(ownerEmail, granteeEmail, role) {
+  const token = getServiceAccountToken_(ownerEmail, [SCOPE_CALENDAR_]);
+
+  const response = UrlFetchApp.fetch(
+    'https://www.googleapis.com/calendar/v3/calendars/primary/acl' +
+    '?sendNotifications=false',
+    {
+      method: 'POST',
+      headers: {
+        Authorization:  'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({
+        role:  role,
+        scope: { type: 'user', value: granteeEmail }
+      }),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200 && response.getResponseCode() !== 201) {
+    throw new Error(
+      'Failed to add calendar ACL (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  return JSON.parse(response.getContentText());
+}
+
+/**
+ * Removes an ACL rule from the owner's primary calendar.
+ *
+ * @param {string} ownerEmail  Calendar owner's email address.
+ * @param {string} ruleId      ACL rule ID returned by getCalendarAcl().
+ * @returns {{ success: boolean }}
+ */
+function removeCalendarAcl(ownerEmail, ruleId) {
+  const token = getServiceAccountToken_(ownerEmail, [SCOPE_CALENDAR_]);
+
+  const response = UrlFetchApp.fetch(
+    'https://www.googleapis.com/calendar/v3/calendars/primary/acl/' +
+    encodeURIComponent(ruleId),
+    {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200 && response.getResponseCode() !== 204) {
+    throw new Error(
+      'Failed to remove calendar ACL (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  return { success: true };
 }
