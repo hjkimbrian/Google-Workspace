@@ -8,7 +8,7 @@ A collection of tools and automation scripts for Google Workspace administrators
 
 | Directory | Description |
 |-----------|-------------|
-| [`SignatureManager/`](SignatureManager/) | Full-featured admin web app: manage Gmail signatures for all domain users (WYSIWYG editor + template variables) **and** transfer user data (Drive, Calendar, Looker Studio) between accounts using the Google Workspace Data Transfer API |
+| [`GWSAdminToolkit/`](GWSAdminToolkit/) | Full-featured admin web app: manage Gmail signatures for all domain users (WYSIWYG editor + template variables) **and** transfer user data (Drive, Calendar, Looker Studio) between accounts using the Google Workspace Data Transfer API |
 
 ### Google Apps Scripts (`.gs`)
 
@@ -57,7 +57,7 @@ See [`Migration/README.md`](Migration/README.md) for full usage instructions.
 
 ### GWS Admin Toolkit (Web App)
 
-See [`SignatureManager/README.md`](SignatureManager/README.md) for full setup instructions including GCP project configuration, service account creation, domain-wide delegation, and deployment.
+See [`GWSAdminToolkit/README.md`](GWSAdminToolkit/README.md) for full setup instructions including GCP project configuration, service account creation, domain-wide delegation, and deployment.
 
 ### Apps Scripts
 

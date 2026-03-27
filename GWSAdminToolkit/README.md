@@ -146,9 +146,9 @@ Create three files in the editor — one for each file in this folder:
 
 | Apps Script file | Source file in this repo |
 |------------------|--------------------------|
-| `Code.gs` | `SignatureManager/Code.gs` |
-| `Auth.gs` | `SignatureManager/Auth.gs` |
-| `Index.html` | `SignatureManager/Index.html` |
+| `Code.gs` | `GWSAdminToolkit/Code.gs` |
+| `Auth.gs` | `GWSAdminToolkit/Auth.gs` |
+| `Index.html` | `GWSAdminToolkit/Index.html` |
 
 > To create a new file: click the **+** button next to *Files*.
 > For `.gs` files choose *Script*; for `.html` choose *HTML*.
