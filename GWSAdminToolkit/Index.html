@@ -323,6 +323,18 @@
       border-bottom: 1px solid #dee2e6;
     }
 
+    /*
+     * Use explicit CSS (no !important) so that style.display = 'none' in
+     * showPage() can override it.  Bootstrap utility classes like d-flex use
+     * display: flex !important which would beat a plain inline style assignment,
+     * keeping the signatures panel visible even when the Transfer tab is active.
+     */
+    #page-signatures {
+      display: flex;
+      flex-grow: 1;
+      overflow: hidden;
+    }
+
     #page-nav .nav-link {
       color: #6c757d;
       border: none;
@@ -452,7 +464,7 @@
   </div>
 
   <!-- ── Signatures page ──────────────────────────────────────────────── -->
-  <div id="page-signatures" class="d-flex flex-grow-1 overflow-hidden">
+  <div id="page-signatures">
 
     <!-- ── Sidebar ───────────────────────────────────────────────────── -->
     <div id="sidebar">
