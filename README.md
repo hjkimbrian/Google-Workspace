@@ -1,14 +1,14 @@
-# Google Workspace Admin Automation Scripts
+# GWS Admin Toolkit
 
-A collection of automation scripts for Google Workspace administrators. Covers common admin tasks — user/group management, calendar cleanup, document protection, email handling, and Windows registry configuration for Google Cloud.
+A collection of tools and automation scripts for Google Workspace administrators. Covers common admin tasks — Gmail signature management, data transfers between users, user/group management, calendar cleanup, document protection, email handling, and Windows registry configuration for Google Credential Provider.
 
-## Scripts
+## Tools
 
 ### Web Apps
 
 | Directory | Description |
 |-----------|-------------|
-| [`SignatureManager/`](SignatureManager/) | Full web app to manage Gmail signatures for all domain users, with a WYSIWYG editor and domain-wide delegation |
+| [`GWSAdminToolkit/`](GWSAdminToolkit/) | Full-featured admin web app: manage Gmail signatures for all domain users (WYSIWYG editor + template variables) **and** transfer user data (Drive, Calendar, Looker Studio) between accounts using the Google Workspace Data Transfer API |
 
 ### Google Apps Scripts (`.gs`)
 
@@ -55,13 +55,19 @@ See [`Migration/README.md`](Migration/README.md) for full usage instructions.
 
 ## Usage
 
+### GWS Admin Toolkit (Web App)
+
+See [`GWSAdminToolkit/README.md`](GWSAdminToolkit/README.md) for full setup instructions including GCP project configuration, service account creation, domain-wide delegation, and deployment.
+
 ### Apps Scripts
+
 1. Open [Google Apps Script](https://script.google.com)
 2. Create a new project and paste the `.gs` file contents
 3. Configure any required variables (e.g., group email, calendar IDs)
 4. Run or deploy as needed
 
 ### Shell Scripts
+
 ```bash
 chmod +x script.sh
 ./script.sh
@@ -70,6 +76,7 @@ chmod +x script.sh
 > Requires [GAMADV-XTD3](https://github.com/taers232c/GAMADV-XTD3) or [GYB](https://github.com/GAM-team/got-your-back) depending on the script.
 
 ### PowerShell Scripts
+
 ```powershell
 .\GCPWSetRegistryKeys.ps1
 ```
@@ -78,7 +85,7 @@ chmod +x script.sh
 
 ## Requirements
 
-- Google Workspace admin account
+- Google Workspace super admin account
 - [GAMADV-XTD3](https://github.com/taers232c/GAMADV-XTD3) (for shell scripts)
 - [rclone](https://rclone.org/) (if syncing files to Drive/GCS)
 - Windows with GCPW installed (for PowerShell scripts)
