@@ -436,3 +436,159 @@ function substituteVariables_(template, vars) {
   });
   return result;
 }
+
+// ─── Data Transfer ────────────────────────────────────────────────────────────
+
+/** Scope for the Admin Data Transfer API. */
+const SCOPE_DATATRANSFER_ =
+  'https://www.googleapis.com/auth/admin.datatransfer';
+
+/**
+ * Returns the list of applications available for data transfer in this domain.
+ * The frontend uses the returned app IDs when calling createDataTransfer().
+ *
+ * Requires the Data Transfer API to be enabled on the GCP project and the
+ * SCOPE_DATATRANSFER_ scope to be authorised in Admin Console DWD.
+ *
+ * @returns {{ applications: Array<{id:string, name:string, transferParams:Array}> }}
+ */
+function getDataTransferApplications() {
+  const { adminEmail } = getConfig();
+  const token = getServiceAccountToken_(adminEmail, [SCOPE_DATATRANSFER_]);
+
+  const response = UrlFetchApp.fetch(
+    'https://admin.googleapis.com/admin/datatransfer/v1/applications' +
+    '?customerId=my_customer',
+    {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error(
+      'Data Transfer applications API error (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  const data = JSON.parse(response.getContentText());
+  return { applications: data.applications || [] };
+}
+
+/**
+ * Creates a data transfer from one user to another for a given application.
+ *
+ * @param {string} fromEmail       Source user's primary email address.
+ * @param {string} toEmail         Destination user's primary email address.
+ * @param {string} applicationId   Application ID from getDataTransferApplications().
+ * @param {Array}  transferParams  Array of { key: string, value: string[] } objects.
+ * @returns {object} The created DataTransfer resource from the API.
+ */
+function createDataTransfer(fromEmail, toEmail, applicationId, transferParams) {
+  const { adminEmail } = getConfig();
+
+  // Obtain both tokens up front; each JWT exchange counts against quota.
+  const dirToken  = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
+  const xferToken = getServiceAccountToken_(adminEmail, [SCOPE_DATATRANSFER_]);
+
+  // Data Transfer API requires immutable user IDs, not email addresses.
+  const fromId = getUserId_(fromEmail, dirToken);
+  const toId   = getUserId_(toEmail,   dirToken);
+
+  const payload = {
+    oldOwnerUserId: fromId,
+    newOwnerUserId: toId,
+    applicationDataTransfers: [
+      {
+        applicationId:             String(applicationId),
+        applicationTransferParams: transferParams || []
+      }
+    ]
+  };
+
+  const response = UrlFetchApp.fetch(
+    'https://admin.googleapis.com/admin/datatransfer/v1/transfers',
+    {
+      method: 'POST',
+      headers: {
+        Authorization:  'Bearer ' + xferToken,
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error(
+      'Transfer creation failed (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  return JSON.parse(response.getContentText());
+}
+
+/**
+ * Returns the current status of an existing data transfer.
+ *
+ * @param {string} transferId  Transfer ID returned by createDataTransfer().
+ * @returns {object} The DataTransfer resource (including current status).
+ */
+function getDataTransferStatus(transferId) {
+  const { adminEmail } = getConfig();
+  const token = getServiceAccountToken_(adminEmail, [SCOPE_DATATRANSFER_]);
+
+  const response = UrlFetchApp.fetch(
+    'https://admin.googleapis.com/admin/datatransfer/v1/transfers/' +
+    encodeURIComponent(transferId),
+    {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error(
+      'Could not fetch transfer status (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  return JSON.parse(response.getContentText());
+}
+
+/**
+ * Resolves a user's primary email to their immutable Directory user ID.
+ * The Data Transfer API requires the immutable ID rather than an email address.
+ *
+ * @param {string} email     User's primary email address.
+ * @param {string} dirToken  Pre-fetched Directory API token (optional).
+ * @returns {string} Immutable user ID.
+ */
+function getUserId_(email, dirToken) {
+  var token = dirToken;
+  if (!token) {
+    token = getServiceAccountToken_(getConfig().adminEmail, [SCOPE_DIRECTORY_READ_]);
+  }
+
+  var response = UrlFetchApp.fetch(
+    'https://admin.googleapis.com/admin/directory/v1/users/' +
+    encodeURIComponent(email) + '?fields=id',
+    {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error(
+      'User not found: ' + email +
+      ' (' + response.getResponseCode() + '): ' +
+      response.getContentText()
+    );
+  }
+
+  return JSON.parse(response.getContentText()).id;
+}
