@@ -634,14 +634,19 @@ function getDelegates(userEmail) {
     }
   );
 
-  if (response.getResponseCode() !== 200) {
+  var code = response.getResponseCode();
+
+  // 204 No Content is a valid success — the user simply has no delegates configured.
+  if (code === 204) return { delegates: [] };
+
+  if (code !== 200) {
     var rawBody = response.getContentText();
     var reason  = rawBody;
     try {
       var parsed = JSON.parse(rawBody);
       reason = (parsed.error && parsed.error.message) ? parsed.error.message : rawBody;
     } catch (e) { /* keep raw */ }
-    throw new Error('Gmail Delegates API error (' + response.getResponseCode() + '): ' + reason);
+    throw new Error('Gmail Delegates API error (' + code + '): ' + reason);
   }
 
   const data = JSON.parse(response.getContentText());

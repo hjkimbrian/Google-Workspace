@@ -2431,8 +2431,9 @@ function renderDelUserList(service) {
     return service === 'gmail' ? u.isMailboxSetup !== false : true;
   });
 
-  var listEl  = document.getElementById('del-' + service + '-user-list');
-  var countEl = document.getElementById('del-' + (service === 'gmail' ? 'gmail' : 'cal') + '-user-count');
+  var prefix  = service === 'gmail' ? 'gmail' : 'cal';
+  var listEl  = document.getElementById('del-' + prefix + '-user-list');
+  var countEl = document.getElementById('del-' + prefix + '-user-count');
   if (countEl) countEl.textContent = '(' + users.length + ')';
 
   // Populate the "Add delegate" / "Share with" datalists while we have the list
