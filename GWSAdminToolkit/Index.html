@@ -1,0 +1,2070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GWS Admin Toolkit</title>
+
+  <!-- Bootstrap 5 — layout and components -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <!-- Quill 1.3.7 — WYSIWYG rich text editor -->
+  <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet" />
+
+  <style>
+    /* ── Layout ──────────────────────────────────────────────────── */
+    body {
+      background: #f0f2f5;
+      min-height: 100vh;
+    }
+
+    #app-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Navbar ──────────────────────────────────────────────────── */
+    .navbar-brand {
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    /* ── Sidebar (user list) ──────────────────────────────────────── */
+    #sidebar {
+      width: 320px;
+      min-width: 260px;
+      max-width: 360px;
+      background: #fff;
+      border-right: 1px solid #dee2e6;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #user-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .user-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f2f5;
+      transition: background 0.12s;
+    }
+
+    .user-card:hover  { background: #f8f9fa; }
+    .user-card.active { background: #e8f0fe; border-left: 3px solid #1a73e8; }
+
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #e8eaed;
+    }
+
+    .user-avatar-placeholder {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #c2d3f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      color: #1a73e8;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .user-name  { font-size: 0.875rem; font-weight: 600; line-height: 1.2; }
+    .user-email { font-size: 0.78rem;  color: #6c757d; }
+
+    .badge-suspended {
+      font-size: 0.65rem;
+      background: #fce8e6;
+      color: #c5221f;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 4px;
+    }
+
+    /* ── Main editor area ─────────────────────────────────────────── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 20px 24px;
+      gap: 16px;
+    }
+
+    #editor-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    /* Quill toolbar styling */
+    .ql-toolbar.ql-snow {
+      border: none;
+      border-bottom: 1px solid #dee2e6;
+      background: #f8f9fa;
+      border-radius: 8px 8px 0 0;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 2px;
+    }
+
+    .ql-container.ql-snow {
+      border: none;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .ql-editor {
+      min-height: 200px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ── HTML source mode textarea ────────────────────────────────── */
+    /*
+     * Shown when the user toggles HTML source view. Styled as a dark
+     * code editor to visually differentiate it from the WYSIWYG surface.
+     */
+    #html-source {
+      display: none;            /* hidden by default; JS toggles this */
+      flex: 1;
+      min-height: 200px;
+      border: none;
+      outline: none;
+      resize: none;
+      padding: 14px 16px;
+      font-family: 'Menlo', 'Consolas', 'Monaco', monospace;
+      font-size: 12.5px;
+      line-height: 1.6;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      tab-size: 2;
+    }
+
+    /* ── HTML mode toggle button (lives in the Quill toolbar) ─────── */
+    #btn-html-mode {
+      /* Reset Quill's button defaults */
+      height: 24px !important;
+      width: auto !important;
+      padding: 0 7px !important;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 11px !important;
+      font-weight: 700;
+      color: #495057;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      line-height: 24px;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
+      white-space: nowrap;
+    }
+
+    #btn-html-mode:hover {
+      background: #e9ecef;
+      border-color: #ced4da;
+    }
+
+    /* Active = currently in HTML source mode */
+    #btn-html-mode.active {
+      background: #1e1e1e;
+      color: #4ec9b0;           /* VS Code teal — recognisable "code" colour */
+      border-color: #444;
+    }
+
+    /* ── Action bar ───────────────────────────────────────────────── */
+    #action-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Toast container ──────────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1100;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* ── Placeholder / empty states ────────────────────────────────── */
+    #empty-state {
+      color: #9aa0a6;
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    /* ── Variable chips ───────────────────────────────────────────── */
+    #var-bar {
+      background: #fafbfc;
+      border-top: 1px solid #dee2e6;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+
+    .var-chip {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 12px;
+      border: 1px solid #c5cae9;
+      background: #e8eaf6;
+      color: #3949ab;
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: monospace;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.1s, border-color 0.1s;
+      line-height: 1.6;
+    }
+
+    .var-chip:hover {
+      background: #c5cae9;
+      border-color: #9fa8da;
+    }
+
+    #var-bar-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #9aa0a6;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* ── "No Gmail" badge (shown on non-mailbox accounts) ────────── */
+    .badge-no-gmail {
+      font-size: 0.62rem;
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 1px 5px;
+      margin-left: 4px;
+      white-space: nowrap;
+    }
+
+    /* Warning banner shown in the editor when a non-Gmail user is selected */
+    #no-gmail-warning {
+      display: none;
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      color: #664d03;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Loading skeleton ─────────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, #e8eaed 25%, #f1f3f4 50%, #e8eaed 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ── Image preview area inside the Insert Image modal ─────────── */
+    #img-preview-wrap {
+      display: none;
+      text-align: center;
+      padding: 12px;
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      min-height: 80px;
+    }
+
+    #img-preview {
+      max-width: 100%;
+      max-height: 200px;
+      border-radius: 4px;
+    }
+
+    /* ── Page navigation tabs ─────────────────────────────────────── */
+    #page-nav {
+      flex-shrink: 0;
+      background: #fff;
+      border-bottom: 1px solid #dee2e6;
+    }
+
+    /*
+     * Use explicit CSS (no !important) so that style.display = 'none' in
+     * showPage() can override it.  Bootstrap utility classes like d-flex use
+     * display: flex !important which would beat a plain inline style assignment,
+     * keeping the signatures panel visible even when the Transfer tab is active.
+     */
+    #page-signatures {
+      display: flex;
+      flex-grow: 1;
+      overflow: hidden;
+    }
+
+    #page-nav .nav-link {
+      color: #6c757d;
+      border: none;
+      border-bottom: 3px solid transparent;
+      border-radius: 0;
+      padding: 10px 22px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      background: transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    #page-nav .nav-link:hover { color: #1a73e8; }
+
+    #page-nav .nav-link.active {
+      color: #1a73e8;
+      border-bottom-color: #1a73e8;
+      font-weight: 600;
+    }
+
+    /* ── Transfer page ────────────────────────────────────────────── */
+    #page-transfers {
+      display: none;       /* JS reveals when tab is active */
+      flex-grow: 1;
+      overflow-y: auto;
+      background: #f0f2f5;
+      padding: 28px 24px;
+    }
+
+    .transfer-card {
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 12px;
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 28px 32px;
+    }
+
+    /* Service selection buttons */
+    .service-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 16px 20px;
+      border: 2px solid #dee2e6;
+      border-radius: 10px;
+      background: #fff;
+      cursor: pointer;
+      flex: 1;
+      min-width: 130px;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    }
+
+    .service-btn:hover {
+      border-color: #1a73e8;
+      background: #f4f8ff;
+    }
+
+    .service-btn.active {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+      box-shadow: 0 0 0 3px rgba(26,115,232,0.15);
+    }
+
+    .service-btn .service-icon  { font-size: 1.75rem; }
+
+    .service-btn .service-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #3c4043;
+      white-space: nowrap;
+    }
+
+    .service-btn.active .service-label { color: #1a73e8; }
+
+    /* Options panel */
+    .xfer-opts-panel {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+
+    /* Transfer result cards */
+    .xfer-result {
+      border-left: 4px solid #1a73e8;
+      border-radius: 8px;
+      background: #f8faff;
+      border: 1px solid #dee2e6;
+      border-left-width: 4px;
+      padding: 14px 16px;
+    }
+
+    .xfer-result.status-completed  { border-left-color: #34a853; background: #f6fdf7; }
+    .xfer-result.status-failed     { border-left-color: #ea4335; background: #fdf6f6; }
+    .xfer-result.status-inProgress { border-left-color: #fbbc04; background: #fffdf5; }
+  </style>
+</head>
+
+<body>
+<div id="app-shell">
+
+  <!-- ── Navbar ──────────────────────────────────────────────────────── -->
+  <nav class="navbar navbar-dark bg-primary px-3 flex-shrink-0">
+    <span class="navbar-brand mb-0 h6">
+      <i class="bi bi-tools me-2"></i>GWS Admin Toolkit
+    </span>
+    <span id="domain-badge" class="badge bg-light text-primary fw-normal fs-6 ms-auto"></span>
+  </nav>
+
+  <!-- ── Page navigation tabs ─────────────────────────────────────────── -->
+  <div id="page-nav" class="d-flex px-2">
+    <ul class="nav mb-0">
+      <li class="nav-item">
+        <button class="nav-link active" data-page="signatures" id="tab-signatures">
+          <i class="bi bi-envelope-at me-1"></i>Signatures
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-page="transfers" id="tab-transfers">
+          <i class="bi bi-arrow-left-right me-1"></i>Data Transfer
+        </button>
+      </li>
+    </ul>
+  </div>
+
+  <!-- ── Signatures page ──────────────────────────────────────────────── -->
+  <div id="page-signatures">
+
+    <!-- ── Sidebar ───────────────────────────────────────────────────── -->
+    <div id="sidebar">
+      <!-- Search box -->
+      <div class="p-2 border-bottom">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text bg-white border-end-0">
+            <i class="bi bi-search text-muted"></i>
+          </span>
+          <input id="search-input" type="text" class="form-control border-start-0 ps-0"
+                 placeholder="Search users…" />
+        </div>
+      </div>
+
+      <!-- Filter bar: user count + "Gmail only" toggle -->
+      <div class="d-flex align-items-center justify-content-between px-3 py-1 border-bottom bg-light">
+        <span class="text-muted" style="font-size:0.75rem">
+          <span id="user-count-label">–</span>
+        </span>
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="gmail-only-toggle" checked />
+          <label class="form-check-label text-muted" for="gmail-only-toggle"
+                 style="font-size:0.75rem; cursor:pointer;">Gmail only</label>
+        </div>
+      </div>
+
+      <!--
+        Empty state — intentionally a SIBLING of #user-list, not a child.
+        If it were inside #user-list, `list.innerHTML = cards` would remove
+        it from the DOM on the first render, making getElementById return null
+        on every subsequent call and silently halting re-renders (e.g. when
+        the "Gmail only" toggle fires).
+      -->
+      <div id="empty-state">
+        <i class="bi bi-people fs-2 d-block mb-2"></i>
+        <span id="empty-state-msg">Loading users…</span>
+      </div>
+
+      <!-- User list — only user cards go here; never touch #empty-state -->
+      <div id="user-list"></div>
+
+      <!-- Load more -->
+      <div class="p-2 border-top text-center" id="load-more-wrap" style="display:none!important">
+        <button id="load-more-btn" class="btn btn-sm btn-outline-secondary w-100">
+          <i class="bi bi-chevron-down me-1"></i>Load more users
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Editor panel ───────────────────────────────────────────────── -->
+    <div id="main">
+
+      <!-- Current user info bar -->
+      <div id="user-info-bar" class="d-flex align-items-center gap-2" style="display:none!important">
+        <i class="bi bi-person-circle text-primary fs-5"></i>
+        <div>
+          <div id="selected-name"  class="fw-semibold lh-1" style="font-size:0.9rem"></div>
+          <div id="selected-email" class="text-muted"       style="font-size:0.78rem"></div>
+        </div>
+        <span id="loading-sig-badge" class="badge bg-secondary ms-2" style="display:none">
+          <span class="spinner-border spinner-border-sm me-1"></span>Loading…
+        </span>
+      </div>
+
+      <!-- Warning shown when a user without Gmail is selected -->
+      <div id="no-gmail-warning" role="alert">
+        <i class="bi bi-exclamation-triangle-fill text-warning fs-5"></i>
+        <div>
+          <strong>Gmail not enabled</strong> for this account —
+          signatures cannot be read or saved.
+          The template can still be edited and applied to other users.
+        </div>
+      </div>
+
+      <!-- WYSIWYG / HTML editor wrapper -->
+      <div id="editor-wrapper">
+
+        <!-- Quill toolbar
+             The last <span> contains our custom HTML-mode toggle which is
+             NOT a Quill format button — it is wired up manually in JS. -->
+        <div id="toolbar">
+          <span class="ql-formats">
+            <select class="ql-header">
+              <option value="1">Heading 1</option>
+              <option value="2">Heading 2</option>
+              <option value="3">Heading 3</option>
+              <option selected>Normal</option>
+            </select>
+          </span>
+          <span class="ql-formats">
+            <select class="ql-font">
+              <option selected>Sans-serif</option>
+              <option value="serif">Serif</option>
+              <option value="monospace">Monospace</option>
+            </select>
+          </span>
+          <span class="ql-formats">
+            <select class="ql-size">
+              <option value="small">Small</option>
+              <option selected>Normal</option>
+              <option value="large">Large</option>
+              <option value="huge">Huge</option>
+            </select>
+          </span>
+          <span class="ql-formats">
+            <button class="ql-bold"></button>
+            <button class="ql-italic"></button>
+            <button class="ql-underline"></button>
+            <button class="ql-strike"></button>
+          </span>
+          <span class="ql-formats">
+            <select class="ql-color"></select>
+            <select class="ql-background"></select>
+          </span>
+          <span class="ql-formats">
+            <!--
+              ql-link   — Quill's built-in link handler (unchanged).
+              ql-image  — We OVERRIDE this handler below to show a URL dialog
+                          instead of the default file-picker which base64-encodes
+                          images and blows past Gmail's 10 000-character limit.
+            -->
+            <button class="ql-link"></button>
+            <button class="ql-image" title="Insert image by URL"></button>
+          </span>
+          <span class="ql-formats">
+            <button class="ql-list" value="ordered"></button>
+            <button class="ql-list" value="bullet"></button>
+          </span>
+          <span class="ql-formats">
+            <select class="ql-align"></select>
+          </span>
+          <span class="ql-formats">
+            <button class="ql-clean"></button>
+          </span>
+          <!-- Custom HTML source-mode toggle (not a Quill format) -->
+          <span class="ql-formats">
+            <button id="btn-html-mode" title="Toggle HTML source view">&lt;/&gt;</button>
+          </span>
+        </div>
+
+        <!--
+          WYSIWYG surface — visible in normal mode.
+          Quill mounts into this div.
+        -->
+        <div id="quill-editor"></div>
+
+        <!--
+          Raw HTML textarea — visible only in HTML source mode.
+          Synced with Quill on every mode switch so neither view loses edits.
+        -->
+        <textarea id="html-source"
+                  spellcheck="false"
+                  aria-label="HTML source editor"
+                  placeholder="<!-- Paste or type raw HTML here -->"></textarea>
+
+        <!-- Variable insertion bar — chips are rendered by JS after init -->
+        <div id="var-bar">
+          <span id="var-bar-label">Insert variable:</span>
+          <div id="var-chips" class="d-flex gap-1 flex-wrap"></div>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div id="action-bar">
+        <button id="btn-update-user" class="btn btn-primary" disabled>
+          <i class="bi bi-person-check-fill me-1"></i>Update This User
+        </button>
+        <button id="btn-apply-all" class="btn btn-outline-danger" disabled>
+          <i class="bi bi-people-fill me-1"></i>Apply to All Users
+        </button>
+        <button id="btn-preview" class="btn btn-outline-secondary" disabled>
+          <i class="bi bi-eye me-1"></i>Preview
+        </button>
+        <span id="action-spinner" class="d-none">
+          <span class="spinner-border spinner-border-sm text-secondary me-1"></span>
+          <span id="action-status-text" class="text-muted small">Working…</span>
+        </span>
+      </div>
+
+    </div><!-- /#main -->
+  </div><!-- /#page-signatures -->
+
+  <!-- ── Data Transfer page ───────────────────────────────────────────── -->
+  <div id="page-transfers">
+    <div class="transfer-card shadow-sm">
+
+      <!-- Header -->
+      <div class="mb-4">
+        <h5 class="fw-bold mb-1">
+          <i class="bi bi-arrow-left-right text-primary me-2"></i>Data Transfer
+        </h5>
+        <p class="text-muted small mb-0">
+          Transfer Drive, Calendar, or Looker Studio data between users in your domain
+          using the Google Workspace Data Transfer API.
+        </p>
+      </div>
+
+      <!-- From / To users -->
+      <div class="mb-4">
+        <p class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.72rem;letter-spacing:0.06em">Users</p>
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <label class="form-label small fw-semibold" for="xfer-from">
+              <i class="bi bi-person-dash text-danger me-1"></i>From (source)
+            </label>
+            <input type="text" id="xfer-from" class="form-control form-control-sm"
+                   list="xfer-from-list" placeholder="Type email or name…" autocomplete="off" />
+            <datalist id="xfer-from-list"></datalist>
+            <div class="form-text">Data will be removed from this account.</div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label small fw-semibold" for="xfer-to">
+              <i class="bi bi-person-plus text-success me-1"></i>To (destination)
+            </label>
+            <input type="text" id="xfer-to" class="form-control form-control-sm"
+                   list="xfer-to-list" placeholder="Type email or name…" autocomplete="off" />
+            <datalist id="xfer-to-list"></datalist>
+            <div class="form-text">Data will be transferred to this account.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Service selection -->
+      <div class="mb-4">
+        <p class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.72rem;letter-spacing:0.06em">Service</p>
+        <div class="d-flex gap-3 flex-wrap" id="xfer-service-btns">
+          <button class="service-btn" data-service="drive" type="button">
+            <i class="bi bi-hdd-network-fill service-icon text-primary"></i>
+            <span class="service-label">Google Drive</span>
+          </button>
+          <button class="service-btn" data-service="calendar" type="button">
+            <i class="bi bi-calendar-event-fill service-icon" style="color:#ea4335"></i>
+            <span class="service-label">Google Calendar</span>
+          </button>
+          <button class="service-btn" data-service="looker" type="button">
+            <i class="bi bi-bar-chart-fill service-icon" style="color:#34a853"></i>
+            <span class="service-label">Looker Studio</span>
+          </button>
+        </div>
+        <div id="xfer-apps-loading" class="text-muted small mt-2" style="display:none">
+          <span class="spinner-border spinner-border-sm me-1"></span>Loading available services…
+        </div>
+      </div>
+
+      <!-- Dynamic options panel -->
+      <div id="xfer-opts-wrap" class="mb-4" style="display:none">
+        <p class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.72rem;letter-spacing:0.06em">Options</p>
+        <div class="xfer-opts-panel">
+
+          <!-- Drive options -->
+          <div id="opts-drive" style="display:none">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <i class="bi bi-hdd-network-fill text-primary" style="font-size:0.9rem"></i>
+              <span class="small fw-semibold">Google Drive — Files to transfer</span>
+            </div>
+            <div class="d-flex flex-column gap-1 ps-3">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="drive-privacy"
+                       id="drive-opt-all" value="ALL" checked />
+                <label class="form-check-label small" for="drive-opt-all">
+                  All files <span class="text-muted">(private and shared)</span>
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="drive-privacy"
+                       id="drive-opt-private" value="PRIVATE" />
+                <label class="form-check-label small" for="drive-opt-private">Private files only</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="drive-privacy"
+                       id="drive-opt-shared" value="SHARED" />
+                <label class="form-check-label small" for="drive-opt-shared">Shared files only</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Calendar options -->
+          <div id="opts-calendar" style="display:none">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <i class="bi bi-calendar-event-fill" style="font-size:0.9rem;color:#ea4335"></i>
+              <span class="small fw-semibold">Google Calendar — Resources</span>
+            </div>
+            <div class="d-flex gap-4 mb-2 ps-3">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="cal-release"
+                       id="cal-opt-yes" value="TRUE" checked />
+                <label class="form-check-label small" for="cal-opt-yes">Release calendar resources</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="cal-release"
+                       id="cal-opt-no" value="FALSE" />
+                <label class="form-check-label small" for="cal-opt-no">Keep resources</label>
+              </div>
+            </div>
+            <p class="text-muted small mb-0 ps-3">
+              When enabled, meeting rooms managed by the source user are released during transfer.
+            </p>
+          </div>
+
+          <!-- Looker Studio options -->
+          <div id="opts-looker" style="display:none">
+            <div class="d-flex align-items-center gap-2 mb-1">
+              <i class="bi bi-bar-chart-fill" style="font-size:0.9rem;color:#34a853"></i>
+              <span class="small fw-semibold">Looker Studio</span>
+            </div>
+            <p class="text-muted small mb-0 ps-3">
+              All reports and data sources owned by the source user will be transferred.
+              No additional configuration required.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <div class="d-flex align-items-center gap-3">
+        <button id="btn-create-transfer" class="btn btn-primary btn-sm" type="button" disabled>
+          <i class="bi bi-arrow-left-right me-1"></i>Create Transfer
+        </button>
+        <span id="xfer-spinner" class="d-none text-muted small">
+          <span class="spinner-border spinner-border-sm me-1"></span>Creating transfer…
+        </span>
+      </div>
+
+      <!-- Transfer history / results -->
+      <div id="xfer-results" class="mt-4" style="display:none">
+        <p class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.72rem;letter-spacing:0.06em">
+          Transfer History
+        </p>
+        <div id="xfer-result-list" class="d-flex flex-column gap-2"></div>
+      </div>
+
+    </div><!-- /.transfer-card -->
+  </div><!-- /#page-transfers -->
+
+</div><!-- /#app-shell -->
+
+<!-- ── Insert Image modal ─────────────────────────────────────────────────── -->
+<!--
+  Replaces Quill's default image handler which base64-encodes the selected file.
+  Gmail caps signatures at 10 000 characters; a single base64 image far exceeds
+  that. This dialog inserts a plain <img src="https://..."> tag instead, which
+  references the image from a publicly accessible URL and adds zero extra chars.
+-->
+<div class="modal fade" id="image-modal" tabindex="-1"
+     aria-labelledby="image-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-1">
+        <h5 class="modal-title" id="image-modal-label">
+          <i class="bi bi-image text-primary me-2"></i>Insert Image
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <!-- URL input + inline preview trigger -->
+        <div class="mb-3">
+          <label for="img-url" class="form-label small fw-semibold">
+            Image URL <span class="text-danger">*</span>
+          </label>
+          <div class="input-group input-group-sm">
+            <input id="img-url" type="url" class="form-control"
+                   placeholder="https://example.com/logo.png" />
+            <button id="img-preview-btn" class="btn btn-outline-secondary" type="button"
+                    title="Load a preview of the image">
+              <i class="bi bi-eye me-1"></i>Preview
+            </button>
+          </div>
+          <div class="form-text">
+            Must be a <strong>publicly accessible</strong> URL — not a local file or data URI.
+            Gmail loads images directly from this URL when recipients open the email.
+          </div>
+        </div>
+
+        <!-- Optional attributes -->
+        <div class="row g-2 mb-3">
+          <div class="col">
+            <label for="img-alt" class="form-label small fw-semibold">Alt text</label>
+            <input id="img-alt" type="text" class="form-control form-control-sm"
+                   placeholder="Company logo" />
+          </div>
+          <div class="col-4">
+            <label for="img-width" class="form-label small fw-semibold">Width (px)</label>
+            <input id="img-width" type="number" class="form-control form-control-sm"
+                   placeholder="200" min="1" max="9999" />
+          </div>
+        </div>
+
+        <!-- Image preview — shown after clicking "Preview" -->
+        <div id="img-preview-wrap">
+          <img id="img-preview" src="" alt="Preview" />
+        </div>
+
+      </div>
+      <div class="modal-footer border-0 pt-1">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button id="img-insert-btn" type="button" class="btn btn-primary btn-sm">
+          <i class="bi bi-image me-1"></i>Insert Image
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm "Apply to All" modal ──────────────────────────────────────── -->
+<div class="modal fade" id="confirm-modal" tabindex="-1" aria-labelledby="confirm-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title" id="confirm-modal-label">
+          <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Apply to All Users
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>This will <strong>overwrite the Gmail signature for every active user</strong>
+           in your domain with the editor contents.</p>
+        <p class="text-muted small mb-0">Suspended accounts will be skipped.
+           This action cannot be undone automatically — back up existing signatures first
+           if needed.</p>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirm-apply-all-btn">
+          Yes, apply to all users
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Preview modal ──────────────────────────────────────────────────────── -->
+<div class="modal fade" id="preview-modal" tabindex="-1" aria-labelledby="preview-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-1">
+        <div>
+          <h5 class="modal-title mb-0" id="preview-modal-label">
+            <i class="bi bi-eye text-primary me-2"></i>Signature Preview
+          </h5>
+          <div id="preview-user-label" class="text-muted small"></div>
+        </div>
+        <button type="button" class="btn-close ms-3" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0 position-relative">
+        <!-- Loading state -->
+        <div id="preview-loading" class="text-center py-5 text-muted">
+          <div class="spinner-border spinner-border-sm me-2"></div>Loading preview…
+        </div>
+        <!-- Rendered signature in a sandboxed iframe to isolate CSS -->
+        <iframe id="preview-iframe"
+                sandbox="allow-same-origin"
+                style="width:100%; min-height:220px; border:none; display:none;
+                       border-top: 1px solid #dee2e6;">
+        </iframe>
+      </div>
+      <div class="modal-footer border-0 pt-1">
+        <p class="text-muted small me-auto mb-0">
+          <i class="bi bi-info-circle me-1"></i>
+          Variables are substituted with <strong id="preview-user-email-note"></strong>'s Directory profile.
+        </p>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast container ────────────────────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<!-- Bootstrap 5 JS bundle -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Quill WYSIWYG -->
+<script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  State
+// ════════════════════════════════════════════════════════════════════════════
+const state = {
+  allUsers:       [],   // All users loaded so far (for client-side search)
+  nextPageToken:  null, // Pagination cursor; null means we've loaded everything
+  selectedUser:   null, // Currently selected user object
+  domain:         '',
+  htmlModeActive: false, // True when the raw-HTML textarea is shown instead of Quill
+  quillDirty:     false, // True when the user has typed in Quill since the last setEditorHtml()
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Quill WYSIWYG initialisation
+// ════════════════════════════════════════════════════════════════════════════
+const quill = new Quill('#quill-editor', {
+  modules: { toolbar: '#toolbar' },
+  theme: 'snow',
+  placeholder: 'Select a user on the left to load their signature…',
+});
+
+/*
+ * Track whether the user has made edits in WYSIWYG mode since the last
+ * setEditorHtml() call. This lets the HTML toggle know whether it needs to
+ * pull the latest content from quill.root.innerHTML or can trust the clean
+ * HTML string already stored in htmlSourceEl.value.
+ *
+ * Without this, toggling to HTML mode would overwrite htmlSourceEl with Quill's
+ * normalised/delta-processed version of the HTML, which can differ from the
+ * original source (e.g. Gmail's signature HTML) and appear blank in some cases.
+ */
+quill.on('text-change', function (delta, oldDelta, source) {
+  if (source === 'user') state.quillDirty = true;
+});
+
+/*
+ * Override Quill's built-in image toolbar handler.
+ *
+ * The default handler opens a file-picker and converts the chosen file into a
+ * base64 data URI embedded directly in the HTML.  Gmail rejects signatures
+ * longer than 10 000 characters, and a single base64-encoded image easily
+ * exceeds that limit.
+ *
+ * Our replacement shows a modal that asks for a publicly hosted URL and
+ * inserts a plain <img src="https://..."> tag, which is just ~60 characters.
+ */
+quill.getModule('toolbar').addHandler('image', function () {
+  // Reset the modal fields each time it opens
+  document.getElementById('img-url').value   = '';
+  document.getElementById('img-alt').value   = '';
+  document.getElementById('img-width').value = '';
+  document.getElementById('img-preview').src = '';
+  document.getElementById('img-preview-wrap').style.display = 'none';
+  imageModal.show();
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  HTML source mode
+// ════════════════════════════════════════════════════════════════════════════
+
+const quillEditorEl  = document.getElementById('quill-editor');
+const htmlSourceEl   = document.getElementById('html-source');
+const btnHtmlMode    = document.getElementById('btn-html-mode');
+
+/**
+ * Returns the current editor HTML regardless of which mode is active.
+ *
+ * Always use this instead of reading quill.root.innerHTML directly so that
+ * edits made while in HTML source mode are never silently discarded.
+ *
+ * @returns {string} Raw HTML string suitable for sending to the Gmail API.
+ */
+function getEditorHtml() {
+  return state.htmlModeActive ? htmlSourceEl.value : quill.root.innerHTML;
+}
+
+/**
+ * Sets the editor contents in both modes so that toggling never loses data.
+ *
+ * Uses dangerouslyPasteHTML so Quill's internal Delta state matches the
+ * visible content — direct .innerHTML assignment bypasses Delta tracking and
+ * can leave quill.root.innerHTML returning stale/empty content on read-back.
+ *
+ * htmlSourceEl.value is always set from the original `html` string (not from
+ * quill.root.innerHTML) so it retains the raw source even after Quill
+ * normalises its own representation.
+ *
+ * @param {string} html
+ */
+function setEditorHtml(html) {
+  // Clear first, then paste — avoids Delta append issues on repeated calls
+  quill.setText('');
+  if (html) quill.clipboard.dangerouslyPasteHTML(0, html);
+
+  // Store the original source string independently of Quill's representation
+  htmlSourceEl.value = html;
+
+  // Both surfaces are freshly in sync — reset the dirty flag
+  state.quillDirty = false;
+}
+
+/*
+ * Toggle between WYSIWYG mode and raw HTML source mode.
+ *
+ * On each toggle we copy the content from the active surface to the inactive
+ * one, so neither view ever loses the user's edits.
+ */
+btnHtmlMode.addEventListener('click', function () {
+  if (!state.htmlModeActive) {
+    // ── Entering HTML source mode ──────────────────────────────────────
+    //
+    // Only pull from quill.root.innerHTML if the user has actually typed
+    // something in WYSIWYG mode since the last load.  If they haven't,
+    // htmlSourceEl.value already holds the original source string set by
+    // setEditorHtml() — using that avoids showing Quill's normalised/delta
+    // representation (which can differ from the raw Gmail signature HTML).
+    if (state.quillDirty) {
+      htmlSourceEl.value = quill.root.innerHTML;
+      state.quillDirty   = false;
+    }
+    quillEditorEl.style.display = 'none';
+    // Must use an explicit value — '' would remove the inline style and fall
+    // back to the CSS rule `display: none`, keeping the textarea invisible.
+    htmlSourceEl.style.display  = 'block';
+    htmlSourceEl.focus();
+    btnHtmlMode.classList.add('active');
+    btnHtmlMode.title = 'Switch back to visual editor';
+
+  } else {
+    // ── Returning to WYSIWYG mode ──────────────────────────────────────
+    // Always import from the textarea — the user may have edited raw HTML
+    quill.setText('');
+    if (htmlSourceEl.value) quill.clipboard.dangerouslyPasteHTML(0, htmlSourceEl.value);
+    state.quillDirty = false;
+
+    htmlSourceEl.style.display  = 'none';
+    quillEditorEl.style.display = 'block';
+    quill.focus();
+    btnHtmlMode.classList.remove('active');
+    btnHtmlMode.title = 'Toggle HTML source view';
+  }
+  state.htmlModeActive = !state.htmlModeActive;
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Insert Image modal
+// ════════════════════════════════════════════════════════════════════════════
+
+const imageModal = new bootstrap.Modal(document.getElementById('image-modal'));
+
+/* "Preview" button — load the URL into the preview <img> so admins can
+   verify the image loads before committing it to the signature. */
+document.getElementById('img-preview-btn').addEventListener('click', function () {
+  const url = document.getElementById('img-url').value.trim();
+  if (!url) { showToast('Enter a URL first.', 'warning'); return; }
+
+  const preview     = document.getElementById('img-preview');
+  const previewWrap = document.getElementById('img-preview-wrap');
+
+  preview.src                = url;
+  previewWrap.style.display  = '';
+
+  // Show a broken-image message if the URL fails to load
+  preview.onerror = function () {
+    previewWrap.innerHTML =
+      '<span class="text-danger small">' +
+      '<i class="bi bi-exclamation-triangle me-1"></i>' +
+      'Could not load image — check the URL and make sure it is publicly accessible.' +
+      '</span>';
+  };
+});
+
+/* "Insert Image" button — build an <img> tag and inject it at the cursor. */
+document.getElementById('img-insert-btn').addEventListener('click', function () {
+  const url   = document.getElementById('img-url').value.trim();
+  const alt   = document.getElementById('img-alt').value.trim();
+  const width = parseInt(document.getElementById('img-width').value, 10);
+
+  if (!url) { showToast('Please enter an image URL.', 'warning'); return; }
+
+  if (state.htmlModeActive) {
+    // ── Insert raw <img> tag into the HTML textarea at the cursor ──────
+    const tag =
+      '<img src="' + escapeAttr(url) + '"' +
+      (alt             ? ' alt="'   + escapeAttr(alt)           + '"' : '') +
+      (!isNaN(width)   ? ' width="' + width                     + '"' : '') +
+      ' />';
+
+    const pos      = htmlSourceEl.selectionStart;
+    htmlSourceEl.value =
+      htmlSourceEl.value.slice(0, pos) + tag + htmlSourceEl.value.slice(htmlSourceEl.selectionEnd);
+    htmlSourceEl.selectionStart = htmlSourceEl.selectionEnd = pos + tag.length;
+    htmlSourceEl.focus();
+
+  } else {
+    // ── Insert via Quill at the current cursor position ────────────────
+    /*
+     * dangerouslyPasteHTML respects the cursor position and lets us set
+     * all img attributes in one shot, unlike insertEmbed which only
+     * accepts a src value and loses alt/width.
+     */
+    const range = quill.getSelection(true);
+    const tag =
+      '<img src="' + escapeAttr(url) + '"' +
+      (alt             ? ' alt="'   + escapeAttr(alt)           + '"' : '') +
+      (!isNaN(width)   ? ' width="' + width                     + '"' : '') +
+      ' />';
+
+    quill.clipboard.dangerouslyPasteHTML(range.index, tag);
+    quill.setSelection(range.index + 1);
+  }
+
+  imageModal.hide();
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Initialise — called once on page load
+// ════════════════════════════════════════════════════════════════════════════
+(function init() {
+  // Load domain config, then kick off the first page of users
+  google.script.run
+    .withSuccessHandler(function(config) {
+      state.domain = config.domain;
+      document.getElementById('domain-badge').textContent = config.domain;
+      loadUsers();
+    })
+    .withFailureHandler(function(err) {
+      setEmptyState('⚠ ' + err.message);
+      showToast(err.message, 'danger');
+    })
+    .getConfig();
+
+  // Load variable definitions and render the chip bar (independent of config)
+  google.script.run
+    .withSuccessHandler(renderVariableChips)
+    .withFailureHandler(function() { /* non-fatal: chips just won't appear */ })
+    .getAvailableVariables();
+})();
+
+// ════════════════════════════════════════════════════════════════════════════
+//  User list
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Requests the next page of users from the server and appends them to
+ * the list. Disables the "Load more" button while fetching.
+ */
+function loadUsers() {
+  setEmptyState('Loading users…');
+  document.getElementById('load-more-btn').disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      state.allUsers = state.allUsers.concat(result.users);
+      state.nextPageToken = result.nextPageToken;
+
+      renderUserList(state.allUsers, document.getElementById('search-input').value.trim());
+
+      // Keep transfer page user datalists in sync as pages load
+      if (xferState.initialized) populateXferUserLists();
+
+      // Show / hide "Load more" based on whether more pages exist
+      const wrap = document.getElementById('load-more-wrap');
+      wrap.style.display = result.nextPageToken ? '' : 'none';
+      document.getElementById('load-more-btn').disabled = false;
+    })
+    .withFailureHandler(function(err) {
+      setEmptyState('Failed to load users: ' + err.message);
+      showToast(err.message, 'danger');
+    })
+    .getUsers(state.nextPageToken);
+}
+
+/**
+ * Renders user cards in the sidebar list.
+ *
+ * Applies two filters:
+ *  1. "Gmail only" toggle — hides accounts where isMailboxSetup is false.
+ *  2. Live search query  — case-insensitive match on name or email.
+ *
+ * Also updates the user count label to reflect what is currently visible.
+ *
+ * @param {Array}  users
+ * @param {string} query  Live search filter (case-insensitive).
+ */
+function renderUserList(users, query) {
+  const list        = document.getElementById('user-list');
+  const filter      = (query || '').toLowerCase();
+  const gmailOnly   = document.getElementById('gmail-only-toggle').checked;
+
+  const filtered = users.filter(function(u) {
+    // "Gmail only" — exclude accounts without an active Gmail mailbox
+    if (gmailOnly && u.isMailboxSetup === false) return false;
+    // Text search
+    if (!filter) return true;
+    return (
+      (u.primaryEmail || '').toLowerCase().includes(filter) ||
+      ((u.name && u.name.fullName) || '').toLowerCase().includes(filter)
+    );
+  });
+
+  // Update the count label so admins know how many accounts are shown
+  const gmailCount = users.filter(function(u) { return u.isMailboxSetup !== false; }).length;
+  document.getElementById('user-count-label').textContent =
+    gmailOnly
+      ? filtered.length + ' of ' + gmailCount + ' Gmail user' + (gmailCount !== 1 ? 's' : '')
+      : filtered.length + ' of ' + users.length + ' user' + (users.length !== 1 ? 's' : '');
+
+  if (filtered.length === 0) {
+    list.innerHTML = '';
+    setEmptyState(query ? 'No users match "' + query + '".' : 'No users found.');
+    return;
+  }
+
+  // Hide empty state when we have results
+  document.getElementById('empty-state').style.display = 'none';
+
+  list.innerHTML = filtered.map(function(user) {
+    const initials = getInitials(user.name && user.name.fullName);
+    const avatarHtml = user.thumbnailPhotoUrl
+      ? '<img class="user-avatar" src="' + escapeHtml(user.thumbnailPhotoUrl) + '" alt="" />'
+      : '<div class="user-avatar-placeholder">' + escapeHtml(initials) + '</div>';
+
+    const suspendedBadge = user.suspended
+      ? '<span class="badge-suspended">suspended</span>'
+      : '';
+
+    // isMailboxSetup=false means the account exists in the directory but has no
+    // Gmail licence — the Gmail API will return "Mail service not enabled" for them.
+    const noGmailBadge = (!user.suspended && user.isMailboxSetup === false)
+      ? '<span class="badge-no-gmail">No Gmail</span>'
+      : '';
+
+    const isActive = state.selectedUser &&
+                     state.selectedUser.primaryEmail === user.primaryEmail;
+
+    return (
+      '<div class="user-card' + (isActive ? ' active' : '') + '" ' +
+           'data-email="' + escapeHtml(user.primaryEmail) + '">' +
+        avatarHtml +
+        '<div class="overflow-hidden">' +
+          '<div class="user-name text-truncate">' +
+            escapeHtml((user.name && user.name.fullName) || user.primaryEmail) +
+            suspendedBadge +
+            noGmailBadge +
+          '</div>' +
+          '<div class="user-email text-truncate">' + escapeHtml(user.primaryEmail) + '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }).join('');
+
+  // Attach click handlers
+  list.querySelectorAll('.user-card').forEach(function(card) {
+    card.addEventListener('click', function() {
+      const email = card.dataset.email;
+      const user  = state.allUsers.find(function(u) { return u.primaryEmail === email; });
+      if (user) selectUser(user);
+    });
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  User selection + signature loading
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Selects a user, highlights them in the sidebar, and loads their signature
+ * into the editor (both the Quill and the HTML textarea are kept in sync).
+ *
+ * @param {object} user  User object from the Directory API.
+ */
+function selectUser(user) {
+  state.selectedUser = user;
+
+  // Update sidebar active state
+  document.querySelectorAll('.user-card').forEach(function(c) {
+    c.classList.toggle('active', c.dataset.email === user.primaryEmail);
+  });
+
+  // Show user info bar
+  const infoBar = document.getElementById('user-info-bar');
+  infoBar.style.display = '';
+  document.getElementById('selected-name').textContent =
+    (user.name && user.name.fullName) || user.primaryEmail;
+  document.getElementById('selected-email').textContent = user.primaryEmail;
+
+  // ── Non-Gmail account: show warning and skip the API call ─────────────────
+  // isMailboxSetup=false means Gmail is not provisioned for this account.
+  // The Gmail API would return "Mail service not enabled" (400) if we tried.
+  const noGmail = user.isMailboxSetup === false;
+  document.getElementById('no-gmail-warning').style.display = noGmail ? 'flex' : 'none';
+
+  if (noGmail) {
+    // Clear the editor and leave the template intact for use with other users
+    setEditorHtml('');
+    // "Update This User" is meaningless — keep it disabled; bulk apply still works
+    document.getElementById('btn-update-user').disabled = true;
+    document.getElementById('btn-apply-all').disabled   = false;
+    document.getElementById('btn-preview').disabled     = true;
+    return;
+  }
+
+  // ── Gmail account: fetch and load the existing signature ──────────────────
+  const badge = document.getElementById('loading-sig-badge');
+  badge.style.display = '';
+
+  // Disable buttons during load
+  document.getElementById('btn-update-user').disabled = true;
+  document.getElementById('btn-apply-all').disabled   = true;
+  document.getElementById('btn-preview').disabled     = true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      badge.style.display = 'none';
+
+      // Keep both editor surfaces in sync so toggling modes never loses content
+      setEditorHtml(result.signature || '');
+
+      // Re-enable action buttons
+      document.getElementById('btn-update-user').disabled = false;
+      document.getElementById('btn-apply-all').disabled   = false;
+      document.getElementById('btn-preview').disabled     = false;
+    })
+    .withFailureHandler(function(err) {
+      badge.style.display = 'none';
+      showToast('Could not load signature: ' + err.message, 'danger');
+      document.getElementById('btn-apply-all').disabled = false;
+      document.getElementById('btn-preview').disabled   = false;
+    })
+    .getUserSignature(user.primaryEmail);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Signature update handlers
+// ════════════════════════════════════════════════════════════════════════════
+
+document.getElementById('btn-update-user').addEventListener('click', function() {
+  if (!state.selectedUser) return;
+
+  // getEditorHtml() reads from whichever surface (Quill or textarea) is active
+  const html = getEditorHtml();
+
+  setActionLoading(true, 'Updating signature for ' + state.selectedUser.primaryEmail + '…');
+
+  google.script.run
+    .withSuccessHandler(function() {
+      setActionLoading(false);
+      showToast(
+        'Signature updated for ' + state.selectedUser.primaryEmail + '.', 'success'
+      );
+    })
+    .withFailureHandler(function(err) {
+      setActionLoading(false);
+      showToast('Update failed: ' + err.message, 'danger');
+    })
+    .updateUserSignature(state.selectedUser.primaryEmail, html);
+});
+
+document.getElementById('btn-apply-all').addEventListener('click', function() {
+  // Show confirmation modal before proceeding
+  var modal = new bootstrap.Modal(document.getElementById('confirm-modal'));
+  modal.show();
+});
+
+document.getElementById('confirm-apply-all-btn').addEventListener('click', function() {
+  bootstrap.Modal.getInstance(document.getElementById('confirm-modal')).hide();
+
+  const html = getEditorHtml();
+  setActionLoading(true, 'Applying signature to all users — please wait…');
+
+  // Disable both buttons for the duration
+  document.getElementById('btn-update-user').disabled = true;
+  document.getElementById('btn-apply-all').disabled   = true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      setActionLoading(false);
+      document.getElementById('btn-update-user').disabled = false;
+      document.getElementById('btn-apply-all').disabled   = false;
+      document.getElementById('btn-preview').disabled     = false;
+
+      var msg = 'Updated ' + result.updated + ' user(s).';
+      if (result.failed && result.failed.length > 0) {
+        msg += ' ' + result.failed.length + ' failed — see console for details.';
+        console.warn('Failed updates:', result.failed);
+        showToast(msg, 'warning');
+      } else {
+        showToast(msg, 'success');
+      }
+    })
+    .withFailureHandler(function(err) {
+      setActionLoading(false);
+      document.getElementById('btn-update-user').disabled = false;
+      document.getElementById('btn-apply-all').disabled   = false;
+      document.getElementById('btn-preview').disabled     = false;
+      showToast('Apply-to-all failed: ' + err.message, 'danger');
+    })
+    .updateAllUsersSignature(html);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Variable chips
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Renders the variable chip bar from the server-supplied variable definitions.
+ * Clicking a chip inserts the {{variable}} token at the cursor, whether the
+ * editor is in WYSIWYG mode or raw HTML source mode.
+ *
+ * @param {Array<{variable:string, label:string, description:string}>} variables
+ */
+function renderVariableChips(variables) {
+  const container = document.getElementById('var-chips');
+  container.innerHTML = variables.map(function(v) {
+    return (
+      '<button class="var-chip" ' +
+             'title="' + escapeHtml(v.description) + '" ' +
+             'data-var="' + escapeHtml(v.variable) + '">' +
+        escapeHtml(v.label) +
+      '</button>'
+    );
+  }).join('');
+
+  container.querySelectorAll('.var-chip').forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      insertVariable(chip.dataset.var);
+    });
+  });
+}
+
+/**
+ * Inserts a variable token (e.g. "{{firstName}}") at the current cursor
+ * position in whichever editor surface is active.
+ *
+ * In HTML source mode the token is spliced into the textarea at the text
+ * cursor.  In WYSIWYG mode it is inserted via the Quill API.
+ *
+ * @param {string} varToken  The full placeholder text, e.g. "{{firstName}}".
+ */
+function insertVariable(varToken) {
+  if (state.htmlModeActive) {
+    // Splice into the raw HTML textarea at the current text cursor position
+    const pos = htmlSourceEl.selectionStart;
+    htmlSourceEl.value =
+      htmlSourceEl.value.slice(0, pos) +
+      varToken +
+      htmlSourceEl.value.slice(htmlSourceEl.selectionEnd);
+    htmlSourceEl.selectionStart = htmlSourceEl.selectionEnd = pos + varToken.length;
+    htmlSourceEl.focus();
+    return;
+  }
+
+  // Insert into Quill at the current cursor / selection start
+  quill.focus();
+  const range = quill.getSelection(true); // true: focus the editor first
+  quill.insertText(range.index, varToken, 'user');
+  quill.setSelection(range.index + varToken.length);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Preview
+// ════════════════════════════════════════════════════════════════════════════
+
+document.getElementById('btn-preview').addEventListener('click', function() {
+  if (!state.selectedUser) return;
+
+  const htmlTemplate = getEditorHtml();
+  const user         = state.selectedUser;
+
+  // Prepare and show the modal in loading state
+  document.getElementById('preview-user-label').textContent =
+    (user.name && user.name.fullName ? user.name.fullName + ' — ' : '') +
+    user.primaryEmail;
+  document.getElementById('preview-user-email-note').textContent =
+    user.primaryEmail;
+  document.getElementById('preview-loading').style.display = '';
+  document.getElementById('preview-iframe').style.display  = 'none';
+
+  const previewModal = new bootstrap.Modal(document.getElementById('preview-modal'));
+  previewModal.show();
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      const iframe = document.getElementById('preview-iframe');
+
+      // Write rendered HTML into the sandboxed iframe
+      iframe.contentDocument.open();
+      iframe.contentDocument.write(
+        '<!DOCTYPE html><html><head>' +
+        '<meta charset="UTF-8">' +
+        '<style>body{margin:16px;font-family:sans-serif;font-size:14px;line-height:1.5}</style>' +
+        '</head><body>' + result.html + '</body></html>'
+      );
+      iframe.contentDocument.close();
+
+      // Auto-size the iframe to its content height
+      iframe.style.minHeight =
+        Math.max(iframe.contentDocument.body.scrollHeight + 32, 120) + 'px';
+
+      document.getElementById('preview-loading').style.display = 'none';
+      iframe.style.display = '';
+    })
+    .withFailureHandler(function(err) {
+      bootstrap.Modal.getInstance(document.getElementById('preview-modal')).hide();
+      showToast('Preview failed: ' + err.message, 'danger');
+    })
+    .previewSignatureForUser(user.primaryEmail, htmlTemplate);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Search — live filter as the user types
+// ════════════════════════════════════════════════════════════════════════════
+document.getElementById('search-input').addEventListener('input', function() {
+  renderUserList(state.allUsers, this.value.trim());
+});
+
+// ── "Gmail only" toggle — re-render the list immediately on change ─────────
+document.getElementById('gmail-only-toggle').addEventListener('change', function() {
+  renderUserList(state.allUsers, document.getElementById('search-input').value.trim());
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Load more users
+// ════════════════════════════════════════════════════════════════════════════
+document.getElementById('load-more-btn').addEventListener('click', loadUsers);
+
+// ════════════════════════════════════════════════════════════════════════════
+//  UI helpers
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Displays or hides the loading spinner / status text in the action bar.
+ *
+ * @param {boolean} loading
+ * @param {string}  [text]  Optional status text while loading.
+ */
+function setActionLoading(loading, text) {
+  const spinner = document.getElementById('action-spinner');
+  spinner.classList.toggle('d-none', !loading);
+  if (text) document.getElementById('action-status-text').textContent = text;
+}
+
+/**
+ * Updates the sidebar empty-state message.
+ *
+ * @param {string} msg
+ */
+function setEmptyState(msg) {
+  const el = document.getElementById('empty-state');
+  el.style.display = '';
+  document.getElementById('empty-state-msg').textContent = msg;
+}
+
+/**
+ * Shows a Bootstrap-style toast notification.
+ *
+ * @param {string} message
+ * @param {'success'|'danger'|'warning'|'info'} type  Bootstrap contextual colour.
+ */
+function showToast(message, type) {
+  const container = document.getElementById('toast-container');
+  const id = 'toast-' + Date.now();
+
+  const iconMap = {
+    success: 'bi-check-circle-fill',
+    danger:  'bi-x-circle-fill',
+    warning: 'bi-exclamation-triangle-fill',
+    info:    'bi-info-circle-fill',
+  };
+
+  const html =
+    '<div id="' + id + '" class="toast align-items-center text-white bg-' + type +
+    ' border-0 show" role="alert">' +
+      '<div class="d-flex">' +
+        '<div class="toast-body d-flex align-items-center gap-2">' +
+          '<i class="bi ' + (iconMap[type] || 'bi-info-circle-fill') + '"></i>' +
+          escapeHtml(message) +
+        '</div>' +
+        '<button type="button" class="btn-close btn-close-white me-2 m-auto" ' +
+          'data-bs-dismiss="toast"></button>' +
+      '</div>' +
+    '</div>';
+
+  container.insertAdjacentHTML('beforeend', html);
+
+  const toastEl = document.getElementById(id);
+  const toast   = new bootstrap.Toast(toastEl, { delay: 5000 });
+  toast.show();
+  toastEl.addEventListener('hidden.bs.toast', function() { toastEl.remove(); });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Utility functions
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Derives up to two initials from a display name string.
+ *
+ * @param {string} fullName
+ * @returns {string} e.g. "JD" for "John Doe".
+ */
+function getInitials(fullName) {
+  if (!fullName) return '?';
+  var parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/**
+ * Escapes a string for safe insertion into HTML text nodes.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Escapes a string for safe insertion into an HTML attribute value.
+ * Uses the same replacements as escapeHtml — kept as a named alias so
+ * call-sites make the intent obvious.
+ *
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeAttr(str) {
+  return escapeHtml(str);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Page navigation
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Shows the requested page and updates the tab active state.
+ * page-signatures uses display:flex (via Bootstrap d-flex class); all others
+ * use display:block.
+ *
+ * @param {'signatures'|'transfers'} page
+ */
+function showPage(page) {
+  document.getElementById('page-signatures').style.display =
+    page === 'signatures' ? '' : 'none';       // '' restores d-flex from CSS class
+  document.getElementById('page-transfers').style.display  =
+    page === 'transfers'  ? 'block' : 'none';
+
+  document.querySelectorAll('#page-nav .nav-link').forEach(function(tab) {
+    tab.classList.toggle('active', tab.dataset.page === page);
+  });
+}
+
+document.querySelectorAll('#page-nav .nav-link').forEach(function(tab) {
+  tab.addEventListener('click', function() {
+    var page = this.dataset.page;
+    showPage(page);
+    if (page === 'transfers' && !xferState.initialized) initTransferPage();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Data Transfer page
+// ════════════════════════════════════════════════════════════════════════════
+
+var xferState = {
+  initialized:      false,
+  apps:             {},   // { drive: appId, calendar: appId, looker: appId }
+  selectedServices: {}    // { drive: bool, calendar: bool, looker: bool } — multi-select
+};
+
+// Sub-strings used to match app names returned by the API to our service keys.
+// The API names vary slightly across Workspace editions.
+var XFER_APP_PATTERNS = {
+  drive:    ['drive'],
+  calendar: ['calendar'],
+  looker:   ['looker studio', 'data studio', 'looker']
+};
+
+/**
+ * Initialises the transfer page on first visit.
+ * Loads available applications from the backend and wires up event listeners.
+ */
+function initTransferPage() {
+  xferState.initialized = true;
+  populateXferUserLists();
+
+  var loadingEl = document.getElementById('xfer-apps-loading');
+  loadingEl.style.display = '';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      loadingEl.style.display = 'none';
+
+      // Map API-returned applications to our three service keys by name match.
+      (result.applications || []).forEach(function(app) {
+        var appName = (app.name || '').toLowerCase();
+        Object.keys(XFER_APP_PATTERNS).forEach(function(serviceKey) {
+          var patterns = XFER_APP_PATTERNS[serviceKey];
+          if (patterns.some(function(p) { return appName.indexOf(p) !== -1; })) {
+            // Only store the first match; avoid overwriting with a less specific app.
+            if (!xferState.apps[serviceKey]) {
+              xferState.apps[serviceKey] = app.id;
+            }
+          }
+        });
+      });
+    })
+    .withFailureHandler(function(err) {
+      loadingEl.style.display = 'none';
+      showToast('Could not load transfer services: ' + err.message, 'warning');
+    })
+    .getDataTransferApplications();
+
+  // Service button clicks — each button toggles independently (multi-select)
+  document.querySelectorAll('.service-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      btn.classList.toggle('active');
+      xferState.selectedServices[btn.dataset.service] = btn.classList.contains('active');
+      refreshXferOptions();
+      validateXferForm();
+    });
+  });
+
+  document.getElementById('xfer-from').addEventListener('input', validateXferForm);
+  document.getElementById('xfer-to').addEventListener('input', validateXferForm);
+  document.getElementById('btn-create-transfer').addEventListener('click', doCreateTransfer);
+}
+
+/**
+ * Fills the From/To datalists with all users loaded so far.
+ * Called on init and again whenever a new page of users is fetched.
+ */
+function populateXferUserLists() {
+  var opts = state.allUsers.map(function(u) {
+    var label = (u.name && u.name.fullName)
+      ? u.name.fullName + ' (' + u.primaryEmail + ')'
+      : u.primaryEmail;
+    return (
+      '<option value="' + escapeHtml(u.primaryEmail) + '">' +
+      escapeHtml(label) +
+      '</option>'
+    );
+  }).join('');
+
+  document.getElementById('xfer-from-list').innerHTML = opts;
+  document.getElementById('xfer-to-list').innerHTML   = opts;
+}
+
+/**
+ * Shows option panels for every currently-selected service and hides the rest.
+ * Adds a top-border separator between adjacent visible sections automatically.
+ */
+function refreshXferOptions() {
+  var SERVICES = ['drive', 'calendar', 'looker'];
+  var visibleCount = 0;
+
+  // First pass — show/hide each panel
+  SERVICES.forEach(function(s) {
+    var el = document.getElementById('opts-' + s);
+    var show = !!xferState.selectedServices[s];
+    el.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
+  });
+
+  // Second pass — add border-top separator between adjacent visible sections
+  var firstVisible = true;
+  SERVICES.forEach(function(s) {
+    var el = document.getElementById('opts-' + s);
+    if (el.style.display === 'none') return;
+    if (firstVisible) {
+      el.classList.remove('border-top', 'mt-3', 'pt-3');
+      firstVisible = false;
+    } else {
+      el.classList.add('border-top', 'mt-3', 'pt-3');
+    }
+  });
+
+  document.getElementById('xfer-opts-wrap').style.display = visibleCount > 0 ? '' : 'none';
+}
+
+/**
+ * Enables the Create Transfer button only when source, destination, and at
+ * least one service are all filled in.
+ */
+function validateXferForm() {
+  var from       = document.getElementById('xfer-from').value.trim();
+  var to         = document.getElementById('xfer-to').value.trim();
+  var anyService = Object.keys(xferState.selectedServices).some(function(k) {
+    return !!xferState.selectedServices[k];
+  });
+  var ok = from && to && anyService && from.toLowerCase() !== to.toLowerCase();
+  document.getElementById('btn-create-transfer').disabled = !ok;
+}
+
+/**
+ * Reads the form, builds the multi-service appTransfers payload, and calls
+ * the backend to create a single transfer covering all selected services.
+ */
+function doCreateTransfer() {
+  var from = document.getElementById('xfer-from').value.trim();
+  var to   = document.getElementById('xfer-to').value.trim();
+
+  // Build one entry per selected service.
+  var appTransfers = [];
+  var missingApps  = [];
+
+  if (xferState.selectedServices.drive) {
+    if (!xferState.apps.drive) {
+      missingApps.push('Google Drive');
+    } else {
+      var privVal = document.querySelector('input[name="drive-privacy"]:checked').value;
+      appTransfers.push({
+        applicationId: xferState.apps.drive,
+        params: [{ key: 'PRIVACY_LEVEL', value: privVal === 'ALL' ? ['PRIVATE', 'SHARED'] : [privVal] }]
+      });
+    }
+  }
+
+  if (xferState.selectedServices.calendar) {
+    if (!xferState.apps.calendar) {
+      missingApps.push('Google Calendar');
+    } else {
+      var relVal = document.querySelector('input[name="cal-release"]:checked').value;
+      appTransfers.push({
+        applicationId: xferState.apps.calendar,
+        params: [{ key: 'RELEASE_RESOURCES', value: [relVal] }]
+      });
+    }
+  }
+
+  if (xferState.selectedServices.looker) {
+    if (!xferState.apps.looker) {
+      missingApps.push('Looker Studio');
+    } else {
+      appTransfers.push({ applicationId: xferState.apps.looker, params: [] });
+    }
+  }
+
+  if (missingApps.length > 0) {
+    showToast(
+      missingApps.join(', ') + ' app ID not loaded yet. ' +
+      'Ensure the Data Transfer API is enabled and the datatransfer scope is authorised in DWD.',
+      'warning'
+    );
+    return;
+  }
+
+  document.getElementById('btn-create-transfer').disabled = true;
+  document.getElementById('xfer-spinner').classList.remove('d-none');
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      document.getElementById('xfer-spinner').classList.add('d-none');
+      document.getElementById('btn-create-transfer').disabled = false;
+      appendXferResult(result, from, to, appTransfers);
+      showToast('Transfer created successfully.', 'success');
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('xfer-spinner').classList.add('d-none');
+      document.getElementById('btn-create-transfer').disabled = false;
+      showToast('Transfer failed: ' + err.message, 'danger');
+    })
+    .createDataTransfer(from, to, appTransfers);
+}
+
+/**
+ * Prepends a transfer result card to the history list.
+ *
+ * @param {object} transfer     DataTransfer resource returned by the API.
+ * @param {string} from         Source email (display only; API response uses user IDs).
+ * @param {string} to           Destination email.
+ * @param {Array}  appTransfers The same appTransfers array passed to createDataTransfer().
+ */
+function appendXferResult(transfer, from, to, appTransfers) {
+  var resultsList = document.getElementById('xfer-result-list');
+  document.getElementById('xfer-results').style.display = '';
+
+  // Build a human-readable name for each app using xferState.apps as a lookup.
+  var APP_LABELS = { drive: 'Google Drive', calendar: 'Google Calendar', looker: 'Looker Studio' };
+  var serviceNames = (appTransfers || []).map(function(at) {
+    var appId = String(at.applicationId);
+    var match = Object.keys(xferState.apps).find(function(k) {
+      return String(xferState.apps[k]) === appId;
+    });
+    return match ? APP_LABELS[match] : 'Service';
+  });
+  var serviceLabel = serviceNames.join(' + ') || 'Data';
+
+  // Per-application status badges
+  var appXfers = transfer.applicationDataTransfers || [];
+  var appStatusHtml = serviceNames.map(function(name, i) {
+    var status = (appXfers[i] && appXfers[i].applicationTransferStatus) || 'pending';
+    var color  = status === 'completed' ? 'success'
+               : status === 'failed'   ? 'danger'
+               : 'warning text-dark';
+    return '<span class="badge bg-' + color + ' text-capitalize">' +
+      escapeHtml(name.replace('Google ', '')) + ': ' + escapeHtml(status) +
+      '</span>';
+  }).join('');
+
+  // Overall card status (worst-case across all apps)
+  var allStatuses = appXfers.map(function(a) { return a.applicationTransferStatus || 'pending'; });
+  var overallStatus = allStatuses.includes('failed') ? 'failed'
+                    : allStatuses.every(function(s) { return s === 'completed'; }) ? 'completed'
+                    : 'inProgress';
+  var statusClass = overallStatus === 'completed'  ? 'status-completed'
+                  : overallStatus === 'failed'     ? 'status-failed'
+                  : 'status-inProgress';
+
+  var transferId = transfer.id || '';
+
+  var card =
+    '<div class="xfer-result ' + statusClass + '" data-xfer-id="' + escapeHtml(transferId) + '">' +
+      '<div class="d-flex align-items-start justify-content-between gap-2">' +
+        '<div class="flex-grow-1 overflow-hidden">' +
+          '<div class="small fw-semibold mb-1">' +
+            '<i class="bi bi-arrow-left-right text-primary me-1"></i>' +
+            escapeHtml(serviceLabel) + ' Transfer' +
+          '</div>' +
+          '<div class="small text-muted text-truncate">' +
+            '<i class="bi bi-person-dash me-1"></i>' + escapeHtml(from) +
+            ' <i class="bi bi-arrow-right mx-1 text-secondary"></i> ' +
+            '<i class="bi bi-person-plus me-1"></i>' + escapeHtml(to) +
+          '</div>' +
+          '<div class="d-flex flex-wrap gap-1 mt-2">' + appStatusHtml + '</div>' +
+          (transferId
+            ? '<div class="text-muted mt-1" style="font-size:0.7rem">' +
+              'ID: <code>' + escapeHtml(transferId) + '</code></div>'
+            : '') +
+        '</div>' +
+        '<div class="d-flex flex-column align-items-end gap-1 flex-shrink-0">' +
+          (transferId
+            ? '<button class="btn btn-link btn-sm p-0 text-muted xfer-refresh-btn" ' +
+              'data-xfer-id="' + escapeHtml(transferId) + '" ' +
+              'style="font-size:0.75rem" title="Refresh transfer status" type="button">' +
+              '<i class="bi bi-arrow-clockwise me-1"></i>Refresh' +
+              '</button>'
+            : '') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  resultsList.insertAdjacentHTML('afterbegin', card);
+
+  // Wire the refresh button we just injected.
+  if (transferId) {
+    var cardEl     = resultsList.querySelector('[data-xfer-id="' + escapeHtml(transferId) + '"]');
+    var refreshBtn = cardEl && cardEl.querySelector('.xfer-refresh-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function() {
+        refreshXferStatus(transferId, cardEl);
+      });
+    }
+  }
+}
+
+/**
+ * Fetches the latest status of an existing transfer and updates its card.
+ *
+ * @param {string}      transferId  DataTransfer ID.
+ * @param {HTMLElement} cardEl      The result card element to update.
+ */
+function refreshXferStatus(transferId, cardEl) {
+  var refreshBtn = cardEl.querySelector('.xfer-refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Refreshing…';
+    refreshBtn.disabled  = true;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      var appXfers    = result.applicationDataTransfers || [];
+      var allStatuses = appXfers.map(function(a) { return a.applicationTransferStatus || 'pending'; });
+      var overallStatus = allStatuses.indexOf('failed') !== -1 ? 'failed'
+                        : allStatuses.every(function(s) { return s === 'completed'; }) ? 'completed'
+                        : 'inProgress';
+
+      // Update card border colour
+      cardEl.className = 'xfer-result ' +
+        (overallStatus === 'completed' ? 'status-completed'
+         : overallStatus === 'failed' ? 'status-failed'
+         : 'status-inProgress');
+
+      // Update per-app status badges
+      var badgesWrap = cardEl.querySelector('.d-flex.flex-wrap.gap-1');
+      if (badgesWrap) {
+        var badges = badgesWrap.querySelectorAll('.badge');
+        appXfers.forEach(function(at, i) {
+          var status = at.applicationTransferStatus || 'pending';
+          var color  = status === 'completed' ? 'success'
+                     : status === 'failed'    ? 'danger'
+                     : 'warning text-dark';
+          if (badges[i]) {
+            var label = (badges[i].textContent.split(':')[0] || '').trim();
+            badges[i].className   = 'badge bg-' + color + ' text-capitalize';
+            badges[i].textContent = label + ': ' + status;
+          }
+        });
+      }
+
+      if (refreshBtn) {
+        refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh';
+        refreshBtn.disabled  = false;
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast('Could not refresh status: ' + err.message, 'warning');
+      if (refreshBtn) {
+        refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh';
+        refreshBtn.disabled  = false;
+      }
+    })
+    .getDataTransferStatus(transferId);
+}
+</script>
+</body>
+</html>
