@@ -433,6 +433,34 @@
     .xfer-result.status-completed  { border-left-color: #34a853; background: #f6fdf7; }
     .xfer-result.status-failed     { border-left-color: #ea4335; background: #fdf6f6; }
     .xfer-result.status-inProgress { border-left-color: #fbbc04; background: #fffdf5; }
+
+    /* ── Delegation page ──────────────────────────────────────────── */
+    #page-delegation {
+      display: none;       /* JS reveals when tab is active */
+      flex-grow: 1;
+      overflow-y: auto;
+      background: #f0f2f5;
+      padding: 28px 24px;
+    }
+
+    .del-card {
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 12px;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 28px 32px;
+    }
+
+    .del-acl-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f2f5;
+    }
+
+    .del-acl-row:last-child { border-bottom: none; }
   </style>
 </head>
 
@@ -458,6 +486,11 @@
       <li class="nav-item">
         <button class="nav-link" data-page="transfers" id="tab-transfers">
           <i class="bi bi-arrow-left-right me-1"></i>Data Transfer
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-page="delegation" id="tab-delegation">
+          <i class="bi bi-people me-1"></i>Delegation
         </button>
       </li>
     </ul>
@@ -799,6 +832,149 @@
 
     </div><!-- /.transfer-card -->
   </div><!-- /#page-transfers -->
+
+  <!-- ── Delegation & Calendar Sharing page ───────────────────────────────── -->
+  <div id="page-delegation">
+    <div class="del-card shadow-sm">
+
+      <!-- Header -->
+      <div class="mb-4">
+        <h5 class="fw-bold mb-1">
+          <i class="bi bi-people text-primary me-2"></i>Delegation &amp; Calendar Sharing
+        </h5>
+        <p class="text-muted small mb-0">
+          Manage Gmail delegation and primary calendar sharing for users in your domain.
+        </p>
+      </div>
+
+      <!-- User selector -->
+      <div class="mb-4">
+        <p class="text-muted text-uppercase fw-semibold mb-2" style="font-size:0.72rem;letter-spacing:0.06em">User</p>
+        <div class="d-flex gap-2 align-items-start">
+          <div class="flex-grow-1">
+            <input type="text" id="del-user" class="form-control form-control-sm"
+                   list="del-user-list" placeholder="Type email or name…" autocomplete="off" />
+            <datalist id="del-user-list"></datalist>
+          </div>
+          <button id="btn-del-load" class="btn btn-sm btn-primary" type="button" disabled>
+            <i class="bi bi-search me-1"></i>Load
+          </button>
+        </div>
+      </div>
+
+      <!-- Loading state -->
+      <div id="del-loading" style="display:none" class="text-muted small mb-3">
+        <span class="spinner-border spinner-border-sm me-1"></span>Loading…
+      </div>
+
+      <!-- Content shown after a user is loaded -->
+      <div id="del-content" style="display:none">
+
+        <!-- Policy status bar -->
+        <div id="del-policy-bar" class="d-flex align-items-center gap-3 mb-3 p-3 rounded"
+             style="background:#f8f9fa;border:1px solid #dee2e6">
+          <i id="del-policy-icon" class="bi bi-shield text-muted fs-5"></i>
+          <div class="flex-grow-1">
+            <div class="small fw-semibold" id="del-policy-label">Checking policy…</div>
+            <div class="text-muted small" id="del-policy-note"></div>
+          </div>
+          <span class="badge bg-secondary" id="del-policy-badge">Unknown</span>
+        </div>
+
+        <!-- Warning if delegation not allowed -->
+        <div id="del-policy-warning" class="alert d-none mb-3 py-2 px-3" role="alert"
+             style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;font-size:0.85rem;color:#664d03">
+          <i class="bi bi-exclamation-triangle-fill me-2"></i>
+          Mail delegation is <strong>not allowed</strong> for this user's organisational unit.
+          Attempts to add delegates may fail.
+        </div>
+
+        <!-- ── Mail Delegation ──────────────────────────────────────── -->
+        <div class="mb-4">
+          <p class="text-muted text-uppercase fw-semibold mb-3"
+             style="font-size:0.72rem;letter-spacing:0.06em">
+            <i class="bi bi-envelope me-1"></i>Mail Delegation
+          </p>
+
+          <!-- Current delegates -->
+          <div id="del-delegates-list" class="mb-3"></div>
+
+          <!-- Add delegate -->
+          <div class="d-flex gap-2 align-items-start">
+            <div class="flex-grow-1">
+              <input type="email" id="del-add-input" class="form-control form-control-sm"
+                     placeholder="delegate@example.com" />
+            </div>
+            <button id="btn-del-add" class="btn btn-sm btn-outline-primary" type="button">
+              <i class="bi bi-plus me-1"></i>Add Delegate
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Calendar Sharing ─────────────────────────────────────── -->
+        <div>
+          <p class="text-muted text-uppercase fw-semibold mb-3"
+             style="font-size:0.72rem;letter-spacing:0.06em">
+            <i class="bi bi-calendar3 me-1"></i>Calendar Sharing
+          </p>
+
+          <!-- Calendar not enabled notice -->
+          <div id="del-cal-disabled" class="text-muted small" style="display:none">
+            <i class="bi bi-calendar-x me-1 text-warning"></i>Calendar is not enabled for this user.
+          </div>
+
+          <!-- Calendar sharing content (only shown when calendar is enabled) -->
+          <div id="del-cal-content" style="display:none">
+            <div class="mb-2 small text-muted">
+              Primary calendar: <strong id="del-cal-name"></strong>
+            </div>
+
+            <!-- Existing ACL entries -->
+            <div id="del-acl-list" class="mb-3"></div>
+
+            <!-- Add calendar share -->
+            <div class="xfer-opts-panel">
+              <p class="small fw-semibold mb-2">Share with user</p>
+              <div class="row g-2 align-items-end">
+                <div class="col-sm-5">
+                  <label class="form-label small mb-1" for="del-cal-grantee">Grantee email</label>
+                  <input type="email" id="del-cal-grantee" class="form-control form-control-sm"
+                         placeholder="user@example.com" />
+                </div>
+                <div class="col-sm-4">
+                  <label class="form-label small mb-1">Role</label>
+                  <div class="d-flex flex-column gap-1">
+                    <div class="form-check mb-0">
+                      <input class="form-check-input" type="radio" name="cal-acl-role"
+                             id="cal-role-freeBusy" value="freeBusyReader" />
+                      <label class="form-check-label small" for="cal-role-freeBusy">Free/Busy only</label>
+                    </div>
+                    <div class="form-check mb-0">
+                      <input class="form-check-input" type="radio" name="cal-acl-role"
+                             id="cal-role-reader" value="reader" checked />
+                      <label class="form-check-label small" for="cal-role-reader">View all details</label>
+                    </div>
+                    <div class="form-check mb-0">
+                      <input class="form-check-input" type="radio" name="cal-acl-role"
+                             id="cal-role-writer" value="writer" />
+                      <label class="form-check-label small" for="cal-role-writer">Make changes</label>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-sm-3">
+                  <button id="btn-del-cal-share" class="btn btn-sm btn-outline-primary w-100"
+                          type="button">
+                    <i class="bi bi-share me-1"></i>Share
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div><!-- /#del-cal-content -->
+        </div><!-- /calendar section -->
+
+      </div><!-- /#del-content -->
+    </div><!-- /.del-card -->
+  </div><!-- /#page-delegation -->
 
 </div><!-- /#app-shell -->
 
@@ -1202,8 +1378,9 @@ function loadUsers() {
 
       renderUserList(state.allUsers, document.getElementById('search-input').value.trim());
 
-      // Keep transfer page user datalists in sync as pages load
+      // Keep per-page user datalists in sync as pages load
       if (xferState.initialized) populateXferUserLists();
+      if (delState.initialized)  populateDelUserLists();
 
       // Show / hide "Load more" based on whether more pages exist
       const wrap = document.getElementById('load-more-wrap');
@@ -1694,9 +1871,11 @@ function escapeAttr(str) {
  */
 function showPage(page) {
   document.getElementById('page-signatures').style.display =
-    page === 'signatures' ? '' : 'none';       // '' restores d-flex from CSS class
+    page === 'signatures' ? '' : 'none';       // '' restores display:flex from CSS rule
   document.getElementById('page-transfers').style.display  =
     page === 'transfers'  ? 'block' : 'none';
+  document.getElementById('page-delegation').style.display =
+    page === 'delegation' ? 'block' : 'none';
 
   document.querySelectorAll('#page-nav .nav-link').forEach(function(tab) {
     tab.classList.toggle('active', tab.dataset.page === page);
@@ -1708,6 +1887,7 @@ document.querySelectorAll('#page-nav .nav-link').forEach(function(tab) {
     var page = this.dataset.page;
     showPage(page);
     if (page === 'transfers' && !xferState.initialized) initTransferPage();
+    if (page === 'delegation' && !delState.initialized) initDelegationPage();
   });
 });
 
@@ -2064,6 +2244,384 @@ function refreshXferStatus(transferId, cardEl) {
       }
     })
     .getDataTransferStatus(transferId);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Delegation & Calendar Sharing page
+// ════════════════════════════════════════════════════════════════════════════
+
+var delState = {
+  initialized:      false,
+  currentUserEmail: null,
+  currentOrgUnitPath: null
+};
+
+/**
+ * One-time setup called when the Delegation tab is first opened.
+ * Wires up event listeners; user data is loaded on demand via "Load".
+ */
+function initDelegationPage() {
+  delState.initialized = true;
+  populateDelUserLists();
+
+  document.getElementById('del-user').addEventListener('input', function() {
+    document.getElementById('btn-del-load').disabled = !this.value.trim();
+  });
+
+  document.getElementById('btn-del-load').addEventListener('click', loadDelegationData);
+  document.getElementById('btn-del-add').addEventListener('click', doAddDelegate);
+  document.getElementById('btn-del-cal-share').addEventListener('click', doAddCalendarAcl);
+}
+
+/**
+ * Fills the Delegation page user datalist with all users loaded so far.
+ */
+function populateDelUserLists() {
+  var opts = state.allUsers.map(function(u) {
+    var label = (u.name && u.name.fullName)
+      ? u.name.fullName + ' (' + u.primaryEmail + ')'
+      : u.primaryEmail;
+    return (
+      '<option value="' + escapeHtml(u.primaryEmail) + '">' +
+      escapeHtml(label) + '</option>'
+    );
+  }).join('');
+  document.getElementById('del-user-list').innerHTML = opts;
+}
+
+/**
+ * Loads delegate list and policy status for the selected user.
+ * Fires both getDelegates and getCalendarStatus in parallel.
+ */
+function loadDelegationData() {
+  var email = document.getElementById('del-user').value.trim();
+  if (!email) return;
+
+  delState.currentUserEmail = email;
+
+  // Grab the orgUnitPath from the already-loaded user list (added via getUsers fields)
+  var user = state.allUsers.find(function(u) { return u.primaryEmail === email; });
+  delState.currentOrgUnitPath = user ? (user.orgUnitPath || null) : null;
+
+  document.getElementById('del-content').style.display = 'none';
+  document.getElementById('del-loading').style.display  = '';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      document.getElementById('del-loading').style.display = 'none';
+      renderPolicyBadge(result.delegationAllowed, result.policyNote);
+      renderDelegates(result.delegates);
+      document.getElementById('del-content').style.display = '';
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('del-loading').style.display = 'none';
+      showToast('Could not load delegation data: ' + err.message, 'danger');
+    })
+    .getDelegates(email, delState.currentOrgUnitPath);
+
+  // Calendar status loads independently — content div is shown once delegation loads
+  loadCalendarData(email);
+}
+
+/**
+ * Updates the policy status bar based on the resolved policy value.
+ *
+ * @param {boolean|null} allowed
+ * @param {string|null}  note
+ */
+function renderPolicyBadge(allowed, note) {
+  var icon  = document.getElementById('del-policy-icon');
+  var label = document.getElementById('del-policy-label');
+  var noteEl = document.getElementById('del-policy-note');
+  var badge = document.getElementById('del-policy-badge');
+  var warn  = document.getElementById('del-policy-warning');
+
+  if (allowed === true) {
+    icon.className    = 'bi bi-shield-check text-success fs-5';
+    label.textContent = 'Mail delegation allowed for this OU';
+    badge.className   = 'badge bg-success';
+    badge.textContent = 'Allowed';
+    warn.classList.add('d-none');
+  } else if (allowed === false) {
+    icon.className    = 'bi bi-shield-x text-danger fs-5';
+    label.textContent = 'Mail delegation not allowed for this OU';
+    badge.className   = 'badge bg-danger';
+    badge.textContent = 'Not Allowed';
+    warn.classList.remove('d-none');
+  } else {
+    icon.className    = 'bi bi-shield text-muted fs-5';
+    label.textContent = 'Policy status unknown';
+    badge.className   = 'badge bg-secondary';
+    badge.textContent = 'Unknown';
+    warn.classList.add('d-none');
+  }
+
+  noteEl.textContent = note || '';
+}
+
+/**
+ * Renders the current list of delegates as a simple table.
+ *
+ * @param {Array} delegates  Array of delegate objects from the Gmail API.
+ */
+function renderDelegates(delegates) {
+  var list = document.getElementById('del-delegates-list');
+
+  if (!delegates || delegates.length === 0) {
+    list.innerHTML =
+      '<div class="text-muted small mb-2">' +
+      '<i class="bi bi-inbox me-1"></i>No delegates configured.</div>';
+    return;
+  }
+
+  list.innerHTML = delegates.map(function(d) {
+    var status      = d.verificationStatus || 'unknown';
+    var statusColor = status === 'accepted' ? 'success'
+                    : status === 'pending'  ? 'warning text-dark'
+                    : 'secondary';
+    return (
+      '<div class="del-acl-row">' +
+        '<i class="bi bi-person-check text-primary"></i>' +
+        '<div class="flex-grow-1 small">' +
+          '<span class="fw-semibold">' + escapeHtml(d.delegateEmail) + '</span>' +
+          '<span class="badge bg-' + statusColor + ' ms-2">' + escapeHtml(status) + '</span>' +
+        '</div>' +
+        '<button class="btn btn-link btn-sm text-danger p-0" ' +
+                'data-delegate-email="' + escapeHtml(d.delegateEmail) + '" ' +
+                'title="Remove delegate" type="button" ' +
+                'onclick="doRemoveDelegate(this)">' +
+          '<i class="bi bi-trash3"></i>' +
+        '</button>' +
+      '</div>'
+    );
+  }).join('');
+}
+
+/** Adds the typed email as a delegate for the currently loaded user. */
+function doAddDelegate() {
+  var email    = delState.currentUserEmail;
+  var delegate = document.getElementById('del-add-input').value.trim();
+  if (!email || !delegate) return;
+
+  var btn = document.getElementById('btn-del-add');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+
+  google.script.run
+    .withSuccessHandler(function() {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-plus me-1"></i>Add Delegate';
+      document.getElementById('del-add-input').value = '';
+      showToast('Delegate added.', 'success');
+      reloadDelegates(email);
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-plus me-1"></i>Add Delegate';
+      showToast('Failed to add delegate: ' + err.message, 'danger');
+    })
+    .addDelegate(email, delegate);
+}
+
+/**
+ * Removes a delegate. Called via inline onclick from renderDelegates().
+ *
+ * @param {HTMLElement} btn  The remove button element (has data-delegate-email).
+ */
+function doRemoveDelegate(btn) {
+  var delegateEmail = btn.dataset.delegateEmail;
+  var email         = delState.currentUserEmail;
+  if (!email || !delegateEmail) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  google.script.run
+    .withSuccessHandler(function() {
+      showToast('Delegate removed.', 'success');
+      reloadDelegates(email);
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-trash3"></i>';
+      showToast('Failed to remove delegate: ' + err.message, 'danger');
+    })
+    .removeDelegate(email, delegateEmail);
+}
+
+/**
+ * Re-fetches the delegates list for the currently loaded user and re-renders it.
+ * Does NOT re-check the policy (policy doesn't change per-reload).
+ *
+ * @param {string} email
+ */
+function reloadDelegates(email) {
+  google.script.run
+    .withSuccessHandler(function(result) { renderDelegates(result.delegates); })
+    .withFailureHandler(function(err) {
+      showToast('Could not refresh delegates: ' + err.message, 'warning');
+    })
+    .getDelegates(email, null);   // pass null to skip the policy re-check
+}
+
+// ── Calendar ──────────────────────────────────────────────────────────────────
+
+/**
+ * Checks whether Calendar is enabled for the user and populates the calendar
+ * sharing section accordingly.
+ *
+ * @param {string} email
+ */
+function loadCalendarData(email) {
+  var calDisabled = document.getElementById('del-cal-disabled');
+  var calContent  = document.getElementById('del-cal-content');
+  calDisabled.style.display = 'none';
+  calContent.style.display  = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.enabled) {
+        calDisabled.style.display = '';
+        return;
+      }
+      document.getElementById('del-cal-name').textContent = result.summary || email;
+      calContent.style.display = '';
+      loadCalendarAcl(email);
+    })
+    .withFailureHandler(function() {
+      calDisabled.style.display = '';
+    })
+    .getCalendarStatus(email);
+}
+
+/**
+ * Fetches and renders the ACL entries for the given user's primary calendar.
+ *
+ * @param {string} email  Calendar owner.
+ */
+function loadCalendarAcl(email) {
+  var list = document.getElementById('del-acl-list');
+  list.innerHTML =
+    '<div class="text-muted small mb-2">' +
+    '<span class="spinner-border spinner-border-sm me-1"></span>Loading ACL…</div>';
+
+  google.script.run
+    .withSuccessHandler(function(result) { renderCalendarAcl(result.items || []); })
+    .withFailureHandler(function() {
+      list.innerHTML =
+        '<div class="text-muted small mb-2">Could not load calendar sharing.</div>';
+    })
+    .getCalendarAcl(email);
+}
+
+var ACL_ROLE_LABELS = {
+  freeBusyReader: 'Free/Busy',
+  reader:  'Viewer',
+  writer:  'Editor',
+  owner:   'Owner'
+};
+
+/**
+ * Renders the ACL items, excluding the owner's own entry and domain/public rules.
+ *
+ * @param {Array} items  AclRule resources from the Calendar API.
+ */
+function renderCalendarAcl(items) {
+  var list      = document.getElementById('del-acl-list');
+  var ownerEmail = delState.currentUserEmail;
+
+  var userItems = items.filter(function(item) {
+    return item.scope &&
+           item.scope.type === 'user' &&
+           item.scope.value !== ownerEmail;
+  });
+
+  if (userItems.length === 0) {
+    list.innerHTML =
+      '<div class="text-muted small mb-2">' +
+      '<i class="bi bi-people me-1"></i>Not currently shared with any users.</div>';
+    return;
+  }
+
+  list.innerHTML = userItems.map(function(item) {
+    var roleLabel = ACL_ROLE_LABELS[item.role] || item.role;
+    var roleColor = item.role === 'writer'        ? 'primary'
+                  : item.role === 'reader'        ? 'info text-dark'
+                  : item.role === 'freeBusyReader' ? 'secondary'
+                  : 'secondary';
+    return (
+      '<div class="del-acl-row">' +
+        '<i class="bi bi-calendar-check text-primary"></i>' +
+        '<div class="flex-grow-1 small">' +
+          '<span class="fw-semibold">' + escapeHtml(item.scope.value) + '</span>' +
+          '<span class="badge bg-' + roleColor + ' ms-2">' + escapeHtml(roleLabel) + '</span>' +
+        '</div>' +
+        '<button class="btn btn-link btn-sm text-danger p-0" ' +
+                'data-rule-id="' + escapeHtml(item.id) + '" ' +
+                'title="Remove sharing" type="button" ' +
+                'onclick="doRemoveCalendarAcl(this)">' +
+          '<i class="bi bi-trash3"></i>' +
+        '</button>' +
+      '</div>'
+    );
+  }).join('');
+}
+
+/** Shares the calendar with the entered grantee using the selected role. */
+function doAddCalendarAcl() {
+  var email   = delState.currentUserEmail;
+  var grantee = document.getElementById('del-cal-grantee').value.trim();
+  var role    = document.querySelector('input[name="cal-acl-role"]:checked').value;
+
+  if (!email || !grantee) {
+    showToast('Please enter a grantee email.', 'warning');
+    return;
+  }
+
+  var btn = document.getElementById('btn-del-cal-share');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+
+  google.script.run
+    .withSuccessHandler(function() {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-share me-1"></i>Share';
+      document.getElementById('del-cal-grantee').value = '';
+      showToast('Calendar shared successfully.', 'success');
+      loadCalendarAcl(email);
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-share me-1"></i>Share';
+      showToast('Failed to share calendar: ' + err.message, 'danger');
+    })
+    .addCalendarAcl(email, grantee, role);
+}
+
+/**
+ * Removes a calendar ACL rule. Called via inline onclick from renderCalendarAcl().
+ *
+ * @param {HTMLElement} btn  The remove button element (has data-rule-id).
+ */
+function doRemoveCalendarAcl(btn) {
+  var ruleId = btn.dataset.ruleId;
+  var email  = delState.currentUserEmail;
+  if (!email || !ruleId) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  google.script.run
+    .withSuccessHandler(function() {
+      showToast('Calendar sharing removed.', 'success');
+      loadCalendarAcl(email);
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-trash3"></i>';
+      showToast('Failed to remove calendar sharing: ' + err.message, 'danger');
+    })
+    .removeCalendarAcl(email, ruleId);
 }
 </script>
 </body>

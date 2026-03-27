@@ -1,9 +1,10 @@
 # GWS Admin Toolkit
 
-A Google Apps Script web app for Google Workspace super admins. Provides two tools in a single deployment:
+A Google Apps Script web app for Google Workspace super admins. Provides three tools in a single deployment:
 
 - **Signatures** — view and update Gmail signatures for individual users or the entire domain, with a WYSIWYG rich-text editor and template variables.
 - **Data Transfer** — transfer Google Drive files, Calendar data, and Looker Studio reports from one user account to another using the Google Workspace Data Transfer API.
+- **Delegation** — manage Gmail delegates and primary calendar sharing for any user, with policy visibility (mail delegation allowed/disallowed per OU via the Cloud Identity Policy API).
 
 ---
 
@@ -30,6 +31,14 @@ A Google Apps Script web app for Google Workspace super admins. Provides two too
   - **Looker Studio**: no additional parameters required
 - **Transfer history** — each submitted transfer appears as a card with per-service status badges
 - **Refresh status** — poll the Data Transfer API for updated status without leaving the page
+
+### Delegation
+
+- **User picker** — type any domain user to load their delegation and calendar info
+- **Policy badge** — resolves the mail delegation policy for the user's OU via the Cloud Identity Policy API; displays Allowed / Not Allowed / Unknown with a visual indicator
+- **Mail delegates** — list current delegates with verification status (accepted / pending); add or remove delegates
+- **Calendar sharing** — lists current ACL entries for the user's primary calendar; add a new share rule with role radio buttons (Free/Busy, View all details, Make changes); remove existing shares; no email notifications are sent on any ACL change (`sendNotifications=false`)
+- **Calendar guard** — the calendar sharing section only appears if the user has Google Calendar enabled
 
 ---
 
@@ -82,6 +91,12 @@ In your GCP project, enable these APIs:
 3. **Admin Data Transfer API** *(required for the Data Transfer tab)*
    - *APIs & Services → Library → search "Admin SDK API"* — the Data Transfer API is part of the Admin SDK and is enabled alongside it. If you see it listed separately as "Data Transfer API", enable it too.
 
+4. **Google Calendar API** *(required for the Delegation tab — Calendar Sharing)*
+   - *APIs & Services → Library → search "Google Calendar API" → Enable*
+
+5. **Cloud Identity API** *(required for the Delegation tab — mail delegation policy check)*
+   - *APIs & Services → Library → search "Cloud Identity API" → Enable*
+
 ---
 
 ## Step 3 — Create a service account with domain-wide delegation
@@ -118,15 +133,25 @@ In your GCP project, enable these APIs:
 ```
 https://www.googleapis.com/auth/admin.directory.user.readonly,
 https://www.googleapis.com/auth/gmail.settings.basic,
-https://www.googleapis.com/auth/admin.datatransfer
+https://www.googleapis.com/auth/admin.datatransfer,
+https://www.googleapis.com/auth/gmail.settings.sharing,
+https://www.googleapis.com/auth/calendar,
+https://www.googleapis.com/auth/admin.directory.orgunit.readonly,
+https://www.googleapis.com/auth/cloud-identity.policies
 ```
 
 6. Click **Authorise**.
 
 > **Why these scopes?**
-> - `admin.directory.user.readonly` — lists domain users and resolves user IDs for the Data Transfer API.
-> - `gmail.settings.basic` — reads and writes Gmail send-as settings (signatures).
-> - `admin.datatransfer` — creates and monitors data transfers between users.
+> | Scope | Used for |
+> |---|---|
+> | `admin.directory.user.readonly` | List domain users; resolve user IDs for Data Transfer |
+> | `gmail.settings.basic` | Read and write Gmail send-as settings (signatures) |
+> | `admin.datatransfer` | Create and monitor data transfers |
+> | `gmail.settings.sharing` | Read, add, and remove Gmail delegates |
+> | `calendar` | Read primary calendar status and manage ACL rules |
+> | `admin.directory.orgunit.readonly` | Resolve OU path → OU ID for policy lookup |
+> | `cloud-identity.policies` | Read mail delegation policy per OU via the Cloud Identity Policy API |
 
 ---
 
@@ -218,6 +243,22 @@ Script Properties are encrypted at rest and never visible in source code.
 
 > Data transfers are processed asynchronously by Google. Status will show `inProgress` immediately after creation and update to `completed` once finished (typically within minutes to hours depending on data volume).
 
+### Delegation tab
+
+1. Click the **Delegation** tab in the navigation.
+2. Type or select a domain user and click **Load**.
+3. The **policy badge** shows whether mail delegation is allowed for the user's OU.
+   - A warning banner appears if delegation is not allowed for that OU.
+4. **Mail Delegation** section:
+   - Existing delegates are listed with their verification status.
+   - Enter a delegate email address and click **Add Delegate** to grant access.
+   - Click the trash icon next to any delegate to remove them.
+5. **Calendar Sharing** section (only visible when the user has Calendar enabled):
+   - Existing shares are listed with their role badge.
+   - Enter a grantee email, choose a role (Free/Busy, View all details, Make changes), and click **Share**.
+   - Click the trash icon to remove a calendar share.
+   - No email notification is sent to the grantee when a share is added or removed.
+
 ---
 
 ## Troubleshooting
@@ -245,6 +286,15 @@ Apps Script has a **6-minute execution limit**. For domains with many hundreds o
 - Run during off-peak hours so each API call returns faster.
 - Split users across multiple manual runs using **Update This User**.
 - For very large domains, consider exporting the logic to a Cloud Run job or using the [Gmail API batch endpoint](https://developers.google.com/workspace/gmail/api/guides/batch).
+
+### "Failed to add delegate (400): delegation not allowed"
+The user's OU has the mail delegation policy set to **Not Allowed**. The policy badge on the Delegation tab will show this. Enable mail delegation for the OU in the Admin Console or Google Workspace Admin policy settings, or move the user to an OU where it is permitted.
+
+### "Policy status: Unknown" on the Delegation tab
+Either the `admin.directory.orgunit.readonly` or `cloud-identity.policies` scope is missing from DWD authorisation (Step 4), or the Cloud Identity API is not enabled on the GCP project (Step 2).
+
+### Calendar Sharing section not visible
+The selected user does not have Google Calendar enabled. The section is intentionally hidden — check the user's Google Workspace licence and ensure Google Calendar service is enabled for their OU in the Admin Console.
 
 ### Signature HTML is simplified after WYSIWYG editing
 Quill normalises some complex HTML. Use the `</>` HTML source mode to paste or edit signatures that rely on advanced inline styles.
