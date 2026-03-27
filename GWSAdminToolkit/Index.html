@@ -946,10 +946,10 @@
             <!-- Delegate content -->
             <div id="del-gmail-content" style="display:none">
 
-              <!-- Policy bar — only shown when delegate load fails -->
-              <div id="del-policy-bar" style="display:none"
+              <!-- Policy bar — always shown; updated after delegates load -->
+              <div id="del-policy-bar"
                    class="d-flex align-items-center gap-3 mb-3 p-3 rounded"
-                   style="background:#f8f9fa;border:1px solid #dee2e6">
+                   style="display:none;background:#f8f9fa;border:1px solid #dee2e6">
                 <i id="del-policy-icon" class="bi bi-shield text-muted fs-5"></i>
                 <div class="flex-grow-1">
                   <div class="small fw-semibold" id="del-policy-label"></div>
@@ -2436,16 +2436,26 @@ function renderDelUserList(service) {
   var countEl = document.getElementById('del-' + prefix + '-user-count');
   if (countEl) countEl.textContent = '(' + users.length + ')';
 
-  // Populate the "Add delegate" / "Share with" datalists while we have the list
-  var datalistOpts = state.allUsers.map(function(u) {
-    return '<option value="' + escapeHtml(u.primaryEmail) + '">' +
-           escapeHtml((u.name && u.name.fullName) ? u.name.fullName : u.primaryEmail) +
-           '</option>';
-  }).join('');
-  var addList     = document.getElementById('del-add-list');
+  // "Add delegate" datalist: Gmail-enabled users only (can't delegate to non-Gmail accounts)
+  var gmailUsers = state.allUsers.filter(function(u) { return u.isMailboxSetup !== false; });
+  var addList = document.getElementById('del-add-list');
+  if (addList) {
+    addList.innerHTML = gmailUsers.map(function(u) {
+      return '<option value="' + escapeHtml(u.primaryEmail) + '">' +
+             escapeHtml((u.name && u.name.fullName) ? u.name.fullName : u.primaryEmail) +
+             '</option>';
+    }).join('');
+  }
+
+  // "Share calendar with" datalist: all users
   var granteeList = document.getElementById('del-cal-grantee-list');
-  if (addList)     addList.innerHTML     = datalistOpts;
-  if (granteeList) granteeList.innerHTML = datalistOpts;
+  if (granteeList) {
+    granteeList.innerHTML = state.allUsers.map(function(u) {
+      return '<option value="' + escapeHtml(u.primaryEmail) + '">' +
+             escapeHtml((u.name && u.name.fullName) ? u.name.fullName : u.primaryEmail) +
+             '</option>';
+    }).join('');
+  }
 
   if (!users.length) {
     listEl.innerHTML = '<div class="text-muted small">No users loaded yet.</div>';
@@ -2494,9 +2504,10 @@ function selectDelUser(cardEl, service) {
 
 /**
  * Loads Gmail delegates for the given user.
- * On success: renders the delegate list.
- * On failure: checks the mail delegation policy to explain why, then shows the
- *             policy bar with the result.
+ * Delegates and the policy check run in parallel:
+ *   - Delegates load first (fast) and are shown immediately.
+ *   - Policy bar shows "Checking…" then updates when the policy result arrives.
+ * On delegate load failure the policy result explains why.
  *
  * @param {string} email
  */
@@ -2504,61 +2515,78 @@ function loadGmailDelegation(email) {
   var emptyEl   = document.getElementById('del-gmail-empty');
   var loadingEl = document.getElementById('del-gmail-loading');
   var contentEl = document.getElementById('del-gmail-content');
-  var policyBar = document.getElementById('del-policy-bar');
+  var ouPath    = delState.currentOrgUnitPath;
 
   emptyEl.style.display   = 'none';
   loadingEl.style.display = '';
   contentEl.style.display = 'none';
-  policyBar.style.display = 'none';
   document.getElementById('del-policy-warning').classList.add('d-none');
+  document.getElementById('del-policy-bar').style.display = 'none';
 
+  // State shared between the two parallel calls
+  var delegatesError  = null;
+
+  // ── 1. Load delegates (fast) ──────────────────────────────────────────────
   google.script.run
     .withSuccessHandler(function(result) {
       loadingEl.style.display = 'none';
-      renderDelegates(result.delegates);
       contentEl.style.display = '';
+      renderDelegates(result.delegates);
+      // Policy bar shows "Checking…" while policy loads in background
+      renderPolicyBar('checking', null);
     })
     .withFailureHandler(function(err) {
       loadingEl.style.display = 'none';
-      // Show the content panel so the policy bar is visible
       contentEl.style.display = '';
+      delegatesError = err.message;
       renderDelegates([]);
-
-      // Check policy to explain the failure
-      var ouPath = delState.currentOrgUnitPath;
-      if (ouPath) {
-        google.script.run
-          .withSuccessHandler(function(policy) {
-            renderPolicyBar(policy.allowed, err.message);
-          })
-          .withFailureHandler(function() {
-            renderPolicyBar(null, err.message);
-          })
-          .checkMailDelegationPolicy(ouPath);
-      } else {
-        renderPolicyBar(null, err.message);
-      }
+      renderPolicyBar('checking', null);
     })
     .getDelegates(email);
+
+  // ── 2. Load policy in parallel (may be slower — multiple API calls) ───────
+  if (ouPath) {
+    google.script.run
+      .withSuccessHandler(function(policy) {
+        renderPolicyBar(policy.allowed, delegatesError);
+      })
+      .withFailureHandler(function() {
+        renderPolicyBar(null, delegatesError);
+      })
+      .checkMailDelegationPolicy(ouPath);
+  }
+  // If no ouPath, policy bar stays hidden (nothing useful to show)
 }
 
 /**
- * Shows the policy bar with delegation status + error context.
- * Only called when getDelegates fails — not shown on the happy path.
+ * Updates the policy status bar.
  *
- * @param {boolean|null} allowed   Result from checkMailDelegationPolicy, or null.
- * @param {string}       errorMsg  The original error message from getDelegates.
+ * @param {'checking'|boolean|null} allowed
+ *   'checking' — spinner state while waiting for result
+ *   true       — delegation allowed for this OU
+ *   false      — delegation not allowed for this OU
+ *   null       — could not determine
+ * @param {string|null} errorMsg  Error from getDelegates, if any.
  */
 function renderPolicyBar(allowed, errorMsg) {
-  var bar   = document.getElementById('del-policy-bar');
-  var icon  = document.getElementById('del-policy-icon');
-  var label = document.getElementById('del-policy-label');
+  var bar    = document.getElementById('del-policy-bar');
+  var icon   = document.getElementById('del-policy-icon');
+  var label  = document.getElementById('del-policy-label');
   var noteEl = document.getElementById('del-policy-note');
-  var badge = document.getElementById('del-policy-badge');
-  var warn  = document.getElementById('del-policy-warning');
+  var badge  = document.getElementById('del-policy-badge');
+  var warn   = document.getElementById('del-policy-warning');
 
-  bar.style.background = '#f8f9fa';
-  bar.style.border     = '1px solid #dee2e6';
+  bar.style.display = '';
+
+  if (allowed === 'checking') {
+    icon.className    = 'bi bi-shield text-muted fs-5';
+    label.textContent = 'Checking mail delegation policy…';
+    badge.className   = 'badge bg-secondary';
+    badge.textContent = '';
+    noteEl.textContent = '';
+    warn.classList.add('d-none');
+    return;
+  }
 
   if (allowed === false) {
     icon.className    = 'bi bi-shield-x text-danger fs-5';
@@ -2567,21 +2595,27 @@ function renderPolicyBar(allowed, errorMsg) {
     badge.textContent = 'Not Allowed';
     warn.classList.remove('d-none');
   } else if (allowed === true) {
-    icon.className    = 'bi bi-shield-check text-warning fs-5';
-    label.textContent = 'Delegation is allowed, but an API error occurred';
-    badge.className   = 'badge bg-warning text-dark';
-    badge.textContent = 'Policy OK';
+    if (errorMsg) {
+      icon.className    = 'bi bi-shield-check text-warning fs-5';
+      label.textContent = 'Policy allows delegation, but an API error occurred';
+      badge.className   = 'badge bg-warning text-dark';
+      badge.textContent = 'Policy OK';
+    } else {
+      icon.className    = 'bi bi-shield-check text-success fs-5';
+      label.textContent = 'Mail delegation is allowed for this OU';
+      badge.className   = 'badge bg-success';
+      badge.textContent = 'Allowed';
+    }
     warn.classList.add('d-none');
   } else {
-    icon.className    = 'bi bi-shield-exclamation text-danger fs-5';
-    label.textContent = 'Could not load delegates';
-    badge.className   = 'badge bg-danger';
-    badge.textContent = 'Error';
+    icon.className    = 'bi bi-shield text-muted fs-5';
+    label.textContent = 'Policy status unknown';
+    badge.className   = 'badge bg-secondary';
+    badge.textContent = 'Unknown';
     warn.classList.add('d-none');
   }
 
   noteEl.textContent = errorMsg || '';
-  bar.style.display  = '';
 }
 
 /**
