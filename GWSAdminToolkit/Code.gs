@@ -615,16 +615,15 @@ function getUserId_(email, dirToken) {
 // ─── Mail Delegation ──────────────────────────────────────────────────────────
 
 /**
- * Returns the current Gmail delegates for a user and the delegation policy
- * status for their organisational unit.
+ * Returns the current Gmail delegates for a user.
+ * Throws on any API error — the caller is responsible for checking the
+ * mail delegation policy (via checkMailDelegationPolicy) when an error occurs.
  *
- * @param {string}      userEmail    User whose delegates to list.
- * @param {string|null} orgUnitPath  User's OU path (from Directory API).
- *                                   Pass null to skip the policy check.
- * @returns {{ delegates: Array, delegationAllowed: boolean|null, policyNote: string|null }}
+ * @param {string} userEmail  User whose delegates to list.
+ * @returns {{ delegates: Array }}
  */
-function getDelegates(userEmail, orgUnitPath) {
-  const token = getServiceAccountToken_(userEmail, [SCOPE_GMAIL_DELEGATION_]);
+function getDelegates(userEmail) {
+  const token = getServiceAccountToken_(userEmail, [SCOPE_GMAIL_SETTINGS_, SCOPE_GMAIL_DELEGATION_]);
 
   const response = UrlFetchApp.fetch(
     'https://gmail.googleapis.com/gmail/v1/users/' +
@@ -635,39 +634,18 @@ function getDelegates(userEmail, orgUnitPath) {
     }
   );
 
-  if (response.getResponseCode() === 403) {
-    throw new Error(
-      'Permission denied reading Gmail delegates for ' + userEmail + '. ' +
-      'Add the scope https://www.googleapis.com/auth/gmail.settings.sharing ' +
-      'to your service account\'s Domain-Wide Delegation entry in ' +
-      'Admin Console → Security → API Controls → Domain-wide Delegation, ' +
-      'then retry.'
-    );
-  }
-
   if (response.getResponseCode() !== 200) {
-    throw new Error(
-      'Gmail Delegates API error (' + response.getResponseCode() + '): ' +
-      response.getContentText()
-    );
+    var rawBody = response.getContentText();
+    var reason  = rawBody;
+    try {
+      var parsed = JSON.parse(rawBody);
+      reason = (parsed.error && parsed.error.message) ? parsed.error.message : rawBody;
+    } catch (e) { /* keep raw */ }
+    throw new Error('Gmail Delegates API error (' + response.getResponseCode() + '): ' + reason);
   }
 
   const data = JSON.parse(response.getContentText());
-
-  var policyResult = { allowed: null, note: null };
-  if (orgUnitPath) {
-    try {
-      policyResult = checkMailDelegationPolicy(orgUnitPath);
-    } catch (e) {
-      policyResult = { allowed: null, note: 'Could not check policy: ' + e.message };
-    }
-  }
-
-  return {
-    delegates:         data.delegates || [],
-    delegationAllowed: policyResult.allowed,
-    policyNote:        policyResult.note
-  };
+  return { delegates: data.delegates || [] };
 }
 
 /**
@@ -678,7 +656,7 @@ function getDelegates(userEmail, orgUnitPath) {
  * @returns {object} The created delegate resource.
  */
 function addDelegate(userEmail, delegateEmail) {
-  const token = getServiceAccountToken_(userEmail, [SCOPE_GMAIL_DELEGATION_]);
+  const token = getServiceAccountToken_(userEmail, [SCOPE_GMAIL_SETTINGS_, SCOPE_GMAIL_DELEGATION_]);
 
   const response = UrlFetchApp.fetch(
     'https://gmail.googleapis.com/gmail/v1/users/' +
@@ -712,7 +690,7 @@ function addDelegate(userEmail, delegateEmail) {
  * @returns {{ success: boolean }}
  */
 function removeDelegate(userEmail, delegateEmail) {
-  const token = getServiceAccountToken_(userEmail, [SCOPE_GMAIL_DELEGATION_]);
+  const token = getServiceAccountToken_(userEmail, [SCOPE_GMAIL_SETTINGS_, SCOPE_GMAIL_DELEGATION_]);
 
   const response = UrlFetchApp.fetch(
     'https://gmail.googleapis.com/gmail/v1/users/' +
@@ -749,44 +727,14 @@ function removeDelegate(userEmail, delegateEmail) {
 function checkMailDelegationPolicy(orgUnitPath) {
   const { adminEmail } = getConfig();
 
-  // Step 1 — resolve OU path → OU ID via Directory API
-  const dirToken = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_ORGUNIT_]);
-
-  const cleanPath = orgUnitPath.replace(/^\//, ''); // strip leading slash
-  const ouResp = UrlFetchApp.fetch(
-    'https://admin.googleapis.com/admin/directory/v1/customer/my_customer/orgunits/' +
-    encodeURIComponent(cleanPath),
-    {
-      headers: { Authorization: 'Bearer ' + dirToken },
-      muteHttpExceptions: true
-    }
-  );
-
-  if (ouResp.getResponseCode() !== 200) {
-    return {
-      allowed: null,
-      orgUnitId: '',
-      note: 'Could not resolve OU: ' + ouResp.getContentText()
-    };
-  }
-
-  var orgUnitId = (JSON.parse(ouResp.getContentText()).orgUnitId || '').replace(/^id:/, '');
-  if (!orgUnitId) {
-    return { allowed: null, orgUnitId: '', note: 'OU ID not found.' };
-  }
-
-  // Step 2 — query Cloud Identity Policy API for mail delegation setting on this OU.
-  // Filter matches any setting type containing "mail_delegation" for resilience against
-  // namespace changes (e.g. gmail.mail_delegation vs workspace.gmail.mail_delegation).
+  // Step 1 — fetch ALL gmail.mail_delegation policies, no OU filter.
+  // Filtering by the user's exact OU would miss inherited policies; we handle
+  // inheritance ourselves by walking the OU ancestry below (same approach as GAM).
   const policyToken = getServiceAccountToken_(adminEmail, [SCOPE_CLOUD_IDENTITY_POLICIES_]);
-
-  const filter =
-    'setting.type.matches(\'.*mail_delegation\')' +
-    ' && policyQuery.orgUnit=="orgUnits/' + orgUnitId + '"';
+  const filter = 'setting.type=="settings/gmail.mail_delegation"';
 
   const policyResp = UrlFetchApp.fetch(
-    'https://cloudidentity.googleapis.com/v1/policies' +
-    '?filter=' + encodeURIComponent(filter),
+    'https://cloudidentity.googleapis.com/v1/policies?filter=' + encodeURIComponent(filter),
     {
       headers: { Authorization: 'Bearer ' + policyToken },
       muteHttpExceptions: true
@@ -794,50 +742,66 @@ function checkMailDelegationPolicy(orgUnitPath) {
   );
 
   if (policyResp.getResponseCode() !== 200) {
-    return {
-      allowed: null,
-      orgUnitId: orgUnitId,
-      note: 'Policy API error: ' + policyResp.getContentText()
-    };
+    return { allowed: null, note: null };
   }
 
-  const policyData = JSON.parse(policyResp.getContentText());
-  const policies   = policyData.policies || [];
+  const allPolicies = JSON.parse(policyResp.getContentText()).policies || [];
+  if (!allPolicies.length) return { allowed: null, note: null };
 
-  if (policies.length === 0) {
-    return {
-      allowed: null,
-      orgUnitId: orgUnitId,
-      note: 'No explicit policy set (inheriting from parent OU).'
-    };
+  // Step 2 — resolve each policy's OU resource name ("orgUnits/<id>") to its path.
+  // The Policy API returns only the OU ID; we look up the path via Directory API
+  // using the "id:" prefix (same as GAM's /orgunits/id:<id> calls).
+  const dirToken = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_ORGUNIT_]);
+  const ouPathMap = {}; // "orgUnits/<id>" → "/Some/OU/Path"
+
+  for (var i = 0; i < allPolicies.length; i++) {
+    var ouResource = allPolicies[i].policyQuery && allPolicies[i].policyQuery.orgUnit;
+    if (!ouResource || ouPathMap.hasOwnProperty(ouResource)) continue;
+
+    var ouId = ouResource.replace(/^orgUnits\//, '');
+    try {
+      var ouResp = UrlFetchApp.fetch(
+        'https://admin.googleapis.com/admin/directory/v1/customer/my_customer/orgunits/id:' +
+        ouId + '?fields=orgUnitPath',
+        { headers: { Authorization: 'Bearer ' + dirToken }, muteHttpExceptions: true }
+      );
+      ouPathMap[ouResource] = ouResp.getResponseCode() === 200
+        ? (JSON.parse(ouResp.getContentText()).orgUnitPath || '/')
+        : '/';
+    } catch (e) {
+      ouPathMap[ouResource] = '/';
+    }
   }
 
-  // Parse the setting value — try common field names for the delegation boolean.
-  var allowed = null;
-  for (var i = 0; i < policies.length; i++) {
-    var val = policies[i].setting && policies[i].setting.value;
-    if (!val) continue;
+  // Step 3 — walk the user's OU path from most-specific to root.
+  // Return the value of the first matching policy found (most specific wins).
+  const userPath = orgUnitPath || '/';
+  const segments = userPath.split('/').filter(Boolean);
 
-    if (typeof val.mailDelegationEnabled !== 'undefined') {
-      allowed = !!val.mailDelegationEnabled;
-      break;
-    }
-    if (typeof val.enableMailDelegation !== 'undefined') {
-      allowed = !!val.enableMailDelegation;
-      break;
-    }
-    // Fallback: first boolean field in the value object
-    var keys = Object.keys(val);
-    for (var j = 0; j < keys.length; j++) {
-      if (typeof val[keys[j]] === 'boolean') {
-        allowed = val[keys[j]];
-        break;
-      }
-    }
-    if (allowed !== null) break;
+  for (var depth = segments.length; depth >= 0; depth--) {
+    var candidatePath = depth === 0 ? '/' : '/' + segments.slice(0, depth).join('/');
+
+    // Collect all policies whose resolved OU path matches this candidate level.
+    var candidates = allPolicies.filter(function(p) {
+      return ouPathMap[p.policyQuery && p.policyQuery.orgUnit] === candidatePath;
+    });
+    if (!candidates.length) continue;
+
+    // Among matching policies, pick the one with the highest sortOrder
+    // (ADMIN overrides SYSTEM at the same level; higher sortOrder = more specific).
+    var best = candidates.reduce(function(a, b) {
+      return ((b.policyQuery.sortOrder || 0) > (a.policyQuery.sortOrder || 0)) ? b : a;
+    });
+
+    var value = (best.setting && best.setting.value) || {};
+    var allowed = typeof value.enableMailDelegation !== 'undefined'
+      ? !!value.enableMailDelegation
+      : null;
+
+    return { allowed: allowed, note: null };
   }
 
-  return { allowed: allowed, orgUnitId: orgUnitId, note: null };
+  return { allowed: null, note: null };
 }
 
 // ─── Calendar ACL ─────────────────────────────────────────────────────────────
