@@ -315,6 +315,112 @@
       max-height: 200px;
       border-radius: 4px;
     }
+
+    /* ── Page navigation tabs ─────────────────────────────────────── */
+    #page-nav {
+      flex-shrink: 0;
+      background: #fff;
+      border-bottom: 1px solid #dee2e6;
+    }
+
+    #page-nav .nav-link {
+      color: #6c757d;
+      border: none;
+      border-bottom: 3px solid transparent;
+      border-radius: 0;
+      padding: 10px 22px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      background: transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    #page-nav .nav-link:hover { color: #1a73e8; }
+
+    #page-nav .nav-link.active {
+      color: #1a73e8;
+      border-bottom-color: #1a73e8;
+      font-weight: 600;
+    }
+
+    /* ── Transfer page ────────────────────────────────────────────── */
+    #page-transfers {
+      display: none;       /* JS reveals when tab is active */
+      flex-grow: 1;
+      overflow-y: auto;
+      background: #f0f2f5;
+      padding: 28px 24px;
+    }
+
+    .transfer-card {
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 12px;
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 28px 32px;
+    }
+
+    /* Service selection buttons */
+    .service-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 16px 20px;
+      border: 2px solid #dee2e6;
+      border-radius: 10px;
+      background: #fff;
+      cursor: pointer;
+      flex: 1;
+      min-width: 130px;
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    }
+
+    .service-btn:hover {
+      border-color: #1a73e8;
+      background: #f4f8ff;
+    }
+
+    .service-btn.active {
+      border-color: #1a73e8;
+      background: #e8f0fe;
+      box-shadow: 0 0 0 3px rgba(26,115,232,0.15);
+    }
+
+    .service-btn .service-icon  { font-size: 1.75rem; }
+
+    .service-btn .service-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #3c4043;
+      white-space: nowrap;
+    }
+
+    .service-btn.active .service-label { color: #1a73e8; }
+
+    /* Options panel */
+    .xfer-opts-panel {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+
+    /* Transfer result cards */
+    .xfer-result {
+      border-left: 4px solid #1a73e8;
+      border-radius: 8px;
+      background: #f8faff;
+      border: 1px solid #dee2e6;
+      border-left-width: 4px;
+      padding: 14px 16px;
+    }
+
+    .xfer-result.status-completed  { border-left-color: #34a853; background: #f6fdf7; }
+    .xfer-result.status-failed     { border-left-color: #ea4335; background: #fdf6f6; }
+    .xfer-result.status-inProgress { border-left-color: #fbbc04; background: #fffdf5; }
   </style>
 </head>
 
@@ -329,8 +435,24 @@
     <span id="domain-badge" class="badge bg-light text-primary fw-normal fs-6 ms-auto"></span>
   </nav>
 
-  <!-- ── Body ────────────────────────────────────────────────────────── -->
-  <div class="d-flex flex-grow-1 overflow-hidden">
+  <!-- ── Page navigation tabs ─────────────────────────────────────────── -->
+  <div id="page-nav" class="d-flex px-2">
+    <ul class="nav mb-0">
+      <li class="nav-item">
+        <button class="nav-link active" data-page="signatures" id="tab-signatures">
+          <i class="bi bi-envelope-at me-1"></i>Signatures
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-page="transfers" id="tab-transfers">
+          <i class="bi bi-arrow-left-right me-1"></i>Data Transfer
+        </button>
+      </li>
+    </ul>
+  </div>
+
+  <!-- ── Signatures page ──────────────────────────────────────────────── -->
+  <div id="page-signatures" class="d-flex flex-grow-1 overflow-hidden">
 
     <!-- ── Sidebar ───────────────────────────────────────────────────── -->
     <div id="sidebar">
@@ -511,7 +633,156 @@
       </div>
 
     </div><!-- /#main -->
-  </div><!-- /.d-flex -->
+  </div><!-- /#page-signatures -->
+
+  <!-- ── Data Transfer page ───────────────────────────────────────────── -->
+  <div id="page-transfers">
+    <div class="transfer-card shadow-sm">
+
+      <!-- Header -->
+      <div class="mb-4">
+        <h5 class="fw-bold mb-1">
+          <i class="bi bi-arrow-left-right text-primary me-2"></i>Data Transfer
+        </h5>
+        <p class="text-muted small mb-0">
+          Transfer Drive, Calendar, or Looker Studio data between users in your domain
+          using the Google Workspace Data Transfer API.
+        </p>
+      </div>
+
+      <!-- From / To users -->
+      <div class="mb-4">
+        <p class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.72rem;letter-spacing:0.06em">Users</p>
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <label class="form-label small fw-semibold" for="xfer-from">
+              <i class="bi bi-person-dash text-danger me-1"></i>From (source)
+            </label>
+            <input type="text" id="xfer-from" class="form-control form-control-sm"
+                   list="xfer-from-list" placeholder="Type email or name…" autocomplete="off" />
+            <datalist id="xfer-from-list"></datalist>
+            <div class="form-text">Data will be removed from this account.</div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label small fw-semibold" for="xfer-to">
+              <i class="bi bi-person-plus text-success me-1"></i>To (destination)
+            </label>
+            <input type="text" id="xfer-to" class="form-control form-control-sm"
+                   list="xfer-to-list" placeholder="Type email or name…" autocomplete="off" />
+            <datalist id="xfer-to-list"></datalist>
+            <div class="form-text">Data will be transferred to this account.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Service selection -->
+      <div class="mb-4">
+        <p class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.72rem;letter-spacing:0.06em">Service</p>
+        <div class="d-flex gap-3 flex-wrap" id="xfer-service-btns">
+          <button class="service-btn" data-service="drive" type="button">
+            <i class="bi bi-hdd-network-fill service-icon text-primary"></i>
+            <span class="service-label">Google Drive</span>
+          </button>
+          <button class="service-btn" data-service="calendar" type="button">
+            <i class="bi bi-calendar-event-fill service-icon" style="color:#ea4335"></i>
+            <span class="service-label">Google Calendar</span>
+          </button>
+          <button class="service-btn" data-service="looker" type="button">
+            <i class="bi bi-bar-chart-fill service-icon" style="color:#34a853"></i>
+            <span class="service-label">Looker Studio</span>
+          </button>
+        </div>
+        <div id="xfer-apps-loading" class="text-muted small mt-2" style="display:none">
+          <span class="spinner-border spinner-border-sm me-1"></span>Loading available services…
+        </div>
+      </div>
+
+      <!-- Dynamic options panel -->
+      <div id="xfer-opts-wrap" class="mb-4" style="display:none">
+        <p class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.72rem;letter-spacing:0.06em">Options</p>
+        <div class="xfer-opts-panel">
+
+          <!-- Drive options -->
+          <div id="opts-drive" style="display:none">
+            <p class="small fw-semibold mb-2">Which files should be transferred?</p>
+            <div class="d-flex flex-column gap-1">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="drive-privacy"
+                       id="drive-opt-all" value="ALL" checked />
+                <label class="form-check-label small" for="drive-opt-all">
+                  All files <span class="text-muted">(private and shared)</span>
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="drive-privacy"
+                       id="drive-opt-private" value="PRIVATE" />
+                <label class="form-check-label small" for="drive-opt-private">
+                  Private files only
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="drive-privacy"
+                       id="drive-opt-shared" value="SHARED" />
+                <label class="form-check-label small" for="drive-opt-shared">
+                  Shared files only
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Calendar options -->
+          <div id="opts-calendar" style="display:none">
+            <p class="small fw-semibold mb-2">Release calendar resources (meeting rooms)?</p>
+            <div class="d-flex gap-4 mb-2">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="cal-release"
+                       id="cal-opt-yes" value="TRUE" checked />
+                <label class="form-check-label small" for="cal-opt-yes">Yes, release resources</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="cal-release"
+                       id="cal-opt-no" value="FALSE" />
+                <label class="form-check-label small" for="cal-opt-no">No, keep resources</label>
+              </div>
+            </div>
+            <p class="text-muted small mb-0">
+              When enabled, meeting rooms managed by the source user are released during transfer.
+            </p>
+          </div>
+
+          <!-- Looker Studio options -->
+          <div id="opts-looker" style="display:none">
+            <p class="small fw-semibold mb-1">Looker Studio</p>
+            <p class="text-muted small mb-0">
+              All reports and data sources owned by the source user will be transferred.
+              No additional configuration is required.
+            </p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <div class="d-flex align-items-center gap-3">
+        <button id="btn-create-transfer" class="btn btn-primary btn-sm" type="button" disabled>
+          <i class="bi bi-arrow-left-right me-1"></i>Create Transfer
+        </button>
+        <span id="xfer-spinner" class="d-none text-muted small">
+          <span class="spinner-border spinner-border-sm me-1"></span>Creating transfer…
+        </span>
+      </div>
+
+      <!-- Transfer history / results -->
+      <div id="xfer-results" class="mt-4" style="display:none">
+        <p class="text-muted text-uppercase fw-semibold mb-3" style="font-size:0.72rem;letter-spacing:0.06em">
+          Transfer History
+        </p>
+        <div id="xfer-result-list" class="d-flex flex-column gap-2"></div>
+      </div>
+
+    </div><!-- /.transfer-card -->
+  </div><!-- /#page-transfers -->
+
 </div><!-- /#app-shell -->
 
 <!-- ── Insert Image modal ─────────────────────────────────────────────────── -->
@@ -913,6 +1184,9 @@ function loadUsers() {
       state.nextPageToken = result.nextPageToken;
 
       renderUserList(state.allUsers, document.getElementById('search-input').value.trim());
+
+      // Keep transfer page user datalists in sync as pages load
+      if (xferState.initialized) populateXferUserLists();
 
       // Show / hide "Load more" based on whether more pages exist
       const wrap = document.getElementById('load-more-wrap');
@@ -1388,6 +1662,328 @@ function escapeHtml(str) {
  */
 function escapeAttr(str) {
   return escapeHtml(str);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Page navigation
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Shows the requested page and updates the tab active state.
+ * page-signatures uses display:flex (via Bootstrap d-flex class); all others
+ * use display:block.
+ *
+ * @param {'signatures'|'transfers'} page
+ */
+function showPage(page) {
+  document.getElementById('page-signatures').style.display =
+    page === 'signatures' ? '' : 'none';       // '' restores d-flex from CSS class
+  document.getElementById('page-transfers').style.display  =
+    page === 'transfers'  ? 'block' : 'none';
+
+  document.querySelectorAll('#page-nav .nav-link').forEach(function(tab) {
+    tab.classList.toggle('active', tab.dataset.page === page);
+  });
+}
+
+document.querySelectorAll('#page-nav .nav-link').forEach(function(tab) {
+  tab.addEventListener('click', function() {
+    var page = this.dataset.page;
+    showPage(page);
+    if (page === 'transfers' && !xferState.initialized) initTransferPage();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Data Transfer page
+// ════════════════════════════════════════════════════════════════════════════
+
+var xferState = {
+  initialized:     false,
+  apps:            {},    // { drive: appId, calendar: appId, looker: appId }
+  selectedService: null
+};
+
+// Sub-strings used to match app names returned by the API to our service keys.
+// The API names vary slightly across Workspace editions.
+var XFER_APP_PATTERNS = {
+  drive:    ['drive'],
+  calendar: ['calendar'],
+  looker:   ['looker studio', 'data studio', 'looker']
+};
+
+/**
+ * Initialises the transfer page on first visit.
+ * Loads available applications from the backend and wires up event listeners.
+ */
+function initTransferPage() {
+  xferState.initialized = true;
+  populateXferUserLists();
+
+  var loadingEl = document.getElementById('xfer-apps-loading');
+  loadingEl.style.display = '';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      loadingEl.style.display = 'none';
+
+      // Map API-returned applications to our three service keys by name match.
+      (result.applications || []).forEach(function(app) {
+        var appName = (app.name || '').toLowerCase();
+        Object.keys(XFER_APP_PATTERNS).forEach(function(serviceKey) {
+          var patterns = XFER_APP_PATTERNS[serviceKey];
+          if (patterns.some(function(p) { return appName.indexOf(p) !== -1; })) {
+            // Only store the first match; avoid overwriting with a less specific app.
+            if (!xferState.apps[serviceKey]) {
+              xferState.apps[serviceKey] = app.id;
+            }
+          }
+        });
+      });
+    })
+    .withFailureHandler(function(err) {
+      loadingEl.style.display = 'none';
+      showToast('Could not load transfer services: ' + err.message, 'warning');
+    })
+    .getDataTransferApplications();
+
+  // Service button clicks
+  document.querySelectorAll('.service-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.service-btn').forEach(function(b) {
+        b.classList.remove('active');
+      });
+      btn.classList.add('active');
+      xferState.selectedService = btn.dataset.service;
+      showXferOptions(btn.dataset.service);
+      validateXferForm();
+    });
+  });
+
+  document.getElementById('xfer-from').addEventListener('input', validateXferForm);
+  document.getElementById('xfer-to').addEventListener('input', validateXferForm);
+  document.getElementById('btn-create-transfer').addEventListener('click', doCreateTransfer);
+}
+
+/**
+ * Fills the From/To datalists with all users loaded so far.
+ * Called on init and again whenever a new page of users is fetched.
+ */
+function populateXferUserLists() {
+  var opts = state.allUsers.map(function(u) {
+    var label = (u.name && u.name.fullName)
+      ? u.name.fullName + ' (' + u.primaryEmail + ')'
+      : u.primaryEmail;
+    return (
+      '<option value="' + escapeHtml(u.primaryEmail) + '">' +
+      escapeHtml(label) +
+      '</option>'
+    );
+  }).join('');
+
+  document.getElementById('xfer-from-list').innerHTML = opts;
+  document.getElementById('xfer-to-list').innerHTML   = opts;
+}
+
+/**
+ * Shows the options panel for the selected service and hides the others.
+ *
+ * @param {string} service  'drive' | 'calendar' | 'looker'
+ */
+function showXferOptions(service) {
+  document.getElementById('xfer-opts-wrap').style.display = '';
+  ['drive', 'calendar', 'looker'].forEach(function(s) {
+    document.getElementById('opts-' + s).style.display = s === service ? '' : 'none';
+  });
+}
+
+/**
+ * Enables the Create Transfer button only when all required fields are filled.
+ */
+function validateXferForm() {
+  var from    = document.getElementById('xfer-from').value.trim();
+  var to      = document.getElementById('xfer-to').value.trim();
+  var service = xferState.selectedService;
+  var ok      = from && to && service && from.toLowerCase() !== to.toLowerCase();
+  document.getElementById('btn-create-transfer').disabled = !ok;
+}
+
+/**
+ * Reads the form, builds the transfer params payload, and calls the backend.
+ */
+function doCreateTransfer() {
+  var from    = document.getElementById('xfer-from').value.trim();
+  var to      = document.getElementById('xfer-to').value.trim();
+  var service = xferState.selectedService;
+  var appId   = xferState.apps[service];
+
+  if (!appId) {
+    showToast(
+      'Service application not found. Ensure the Data Transfer API is enabled and ' +
+      'the datatransfer scope is authorised in Admin Console DWD.',
+      'warning'
+    );
+    return;
+  }
+
+  // Build the applicationTransferParams for the selected service.
+  var params = [];
+  if (service === 'drive') {
+    var privVal = document.querySelector('input[name="drive-privacy"]:checked').value;
+    params.push({
+      key:   'PRIVACY_LEVEL',
+      value: privVal === 'ALL' ? ['PRIVATE', 'SHARED'] : [privVal]
+    });
+  } else if (service === 'calendar') {
+    var relVal = document.querySelector('input[name="cal-release"]:checked').value;
+    params.push({ key: 'RELEASE_RESOURCES', value: [relVal] });
+  }
+  // Looker Studio: no transfer params needed.
+
+  document.getElementById('btn-create-transfer').disabled = true;
+  document.getElementById('xfer-spinner').classList.remove('d-none');
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      document.getElementById('xfer-spinner').classList.add('d-none');
+      document.getElementById('btn-create-transfer').disabled = false;
+      appendXferResult(result, from, to, service);
+      showToast('Transfer created successfully.', 'success');
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('xfer-spinner').classList.add('d-none');
+      document.getElementById('btn-create-transfer').disabled = false;
+      showToast('Transfer failed: ' + err.message, 'danger');
+    })
+    .createDataTransfer(from, to, appId, params);
+}
+
+/**
+ * Prepends a transfer result card to the history list.
+ *
+ * @param {object} transfer  DataTransfer resource returned by the API.
+ * @param {string} from      Source email (for display, since the API response uses IDs).
+ * @param {string} to        Destination email.
+ * @param {string} service   Service key ('drive' | 'calendar' | 'looker').
+ */
+function appendXferResult(transfer, from, to, service) {
+  var resultsList = document.getElementById('xfer-result-list');
+  document.getElementById('xfer-results').style.display = '';
+
+  var appXfers    = transfer.applicationDataTransfers || [];
+  var rawStatus   = (appXfers[0] && appXfers[0].applicationTransferStatus)
+                    || transfer.overallTransferStatusCode
+                    || 'pending';
+
+  var statusClass = rawStatus === 'completed'  ? 'status-completed'
+                  : rawStatus === 'failed'     ? 'status-failed'
+                  : rawStatus === 'inProgress' ? 'status-inProgress'
+                  : '';
+
+  var badgeColor  = rawStatus === 'completed'  ? 'success'
+                  : rawStatus === 'failed'     ? 'danger'
+                  : 'warning text-dark';
+
+  var serviceLabel = { drive: 'Google Drive', calendar: 'Google Calendar', looker: 'Looker Studio' }[service]
+                     || service;
+
+  var transferId = transfer.id || '';
+
+  var card =
+    '<div class="xfer-result ' + statusClass + '" data-xfer-id="' + escapeHtml(transferId) + '">' +
+      '<div class="d-flex align-items-start justify-content-between gap-2">' +
+        '<div class="flex-grow-1 overflow-hidden">' +
+          '<div class="small fw-semibold mb-1">' +
+            '<i class="bi bi-arrow-left-right text-primary me-1"></i>' +
+            escapeHtml(serviceLabel) + ' Transfer' +
+          '</div>' +
+          '<div class="small text-muted text-truncate">' +
+            '<i class="bi bi-person-dash me-1"></i>' + escapeHtml(from) +
+            ' <i class="bi bi-arrow-right mx-1 text-secondary"></i> ' +
+            '<i class="bi bi-person-plus me-1"></i>' + escapeHtml(to) +
+          '</div>' +
+          (transferId
+            ? '<div class="text-muted mt-1" style="font-size:0.7rem">' +
+              'ID: <code>' + escapeHtml(transferId) + '</code></div>'
+            : '') +
+        '</div>' +
+        '<div class="d-flex flex-column align-items-end gap-1 flex-shrink-0">' +
+          '<span class="badge bg-' + badgeColor + ' text-capitalize xfer-status-badge">' +
+            escapeHtml(rawStatus) +
+          '</span>' +
+          (transferId
+            ? '<button class="btn btn-link btn-sm p-0 text-muted xfer-refresh-btn" ' +
+              'data-xfer-id="' + escapeHtml(transferId) + '" ' +
+              'style="font-size:0.75rem" title="Refresh transfer status" type="button">' +
+              '<i class="bi bi-arrow-clockwise me-1"></i>Refresh' +
+              '</button>'
+            : '') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  resultsList.insertAdjacentHTML('afterbegin', card);
+
+  // Wire the refresh button we just injected.
+  if (transferId) {
+    var cardEl     = resultsList.querySelector('[data-xfer-id="' + escapeHtml(transferId) + '"]');
+    var refreshBtn = cardEl && cardEl.querySelector('.xfer-refresh-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function() {
+        refreshXferStatus(transferId, cardEl);
+      });
+    }
+  }
+}
+
+/**
+ * Fetches the latest status of an existing transfer and updates its card.
+ *
+ * @param {string}      transferId  DataTransfer ID.
+ * @param {HTMLElement} cardEl      The result card element to update.
+ */
+function refreshXferStatus(transferId, cardEl) {
+  var refreshBtn = cardEl.querySelector('.xfer-refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Refreshing…';
+    refreshBtn.disabled  = true;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      var appXfers  = result.applicationDataTransfers || [];
+      var rawStatus = (appXfers[0] && appXfers[0].applicationTransferStatus)
+                      || result.overallTransferStatusCode || 'pending';
+
+      var statusClass = rawStatus === 'completed'  ? 'status-completed'
+                      : rawStatus === 'failed'     ? 'status-failed'
+                      : rawStatus === 'inProgress' ? 'status-inProgress'
+                      : '';
+
+      var badgeColor  = rawStatus === 'completed'  ? 'success'
+                      : rawStatus === 'failed'     ? 'danger'
+                      : 'warning text-dark';
+
+      // Update card appearance
+      cardEl.className = 'xfer-result ' + statusClass;
+      var badge = cardEl.querySelector('.xfer-status-badge');
+      if (badge) {
+        badge.className   = 'badge bg-' + badgeColor + ' text-capitalize xfer-status-badge';
+        badge.textContent = rawStatus;
+      }
+      if (refreshBtn) {
+        refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh';
+        refreshBtn.disabled  = false;
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast('Could not refresh status: ' + err.message, 'warning');
+      if (refreshBtn) {
+        refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh';
+        refreshBtn.disabled  = false;
+      }
+    })
+    .getDataTransferStatus(transferId);
 }
 </script>
 </body>
