@@ -635,6 +635,16 @@ function getDelegates(userEmail, orgUnitPath) {
     }
   );
 
+  if (response.getResponseCode() === 403) {
+    throw new Error(
+      'Permission denied reading Gmail delegates for ' + userEmail + '. ' +
+      'Add the scope https://www.googleapis.com/auth/gmail.settings.sharing ' +
+      'to your service account\'s Domain-Wide Delegation entry in ' +
+      'Admin Console → Security → API Controls → Domain-wide Delegation, ' +
+      'then retry.'
+    );
+  }
+
   if (response.getResponseCode() !== 200) {
     throw new Error(
       'Gmail Delegates API error (' + response.getResponseCode() + '): ' +

@@ -461,6 +461,47 @@
     }
 
     .del-acl-row:last-child { border-bottom: none; }
+
+    /* ── Delegation sub-tab pill navigation ───────────────────────── */
+    /*
+     * Segmented-control style nav used to switch between Gmail Delegation
+     * and Calendar Sharing without navigating away from the loaded user.
+     */
+    .del-sub-nav {
+      display: flex;
+      gap: 4px;
+      background: #f0f2f5;
+      border-radius: 10px;
+      padding: 4px;
+      margin-bottom: 20px;
+    }
+
+    .del-sub-tab {
+      flex: 1;
+      padding: 7px 14px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #6c757d;
+      background: transparent;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+      white-space: nowrap;
+    }
+
+    .del-sub-tab:hover {
+      background: #e2e5e9;
+      color: #343a40;
+    }
+
+    .del-sub-tab.active {
+      background: #fff;
+      color: #1a73e8;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.13);
+    }
   </style>
 </head>
 
@@ -870,94 +911,131 @@
       <!-- Content shown after a user is loaded -->
       <div id="del-content" style="display:none">
 
-        <!-- Policy status bar -->
-        <div id="del-policy-bar" class="d-flex align-items-center gap-3 mb-3 p-3 rounded"
-             style="background:#f8f9fa;border:1px solid #dee2e6">
-          <i id="del-policy-icon" class="bi bi-shield text-muted fs-5"></i>
-          <div class="flex-grow-1">
-            <div class="small fw-semibold" id="del-policy-label">Checking policy…</div>
-            <div class="text-muted small" id="del-policy-note"></div>
+        <!--
+          Sub-tab navigation — switches between Gmail Delegation and Calendar
+          Sharing without reloading the user. Both sections fetch their data
+          in parallel when "Load" is clicked; only the active tab is visible.
+        -->
+        <div class="del-sub-nav" role="tablist" aria-label="Delegation type">
+          <button class="del-sub-tab active" data-tab="gmail" role="tab"
+                  aria-selected="true" type="button">
+            <i class="bi bi-envelope me-1"></i>Gmail Delegation
+          </button>
+          <button class="del-sub-tab" data-tab="calendar" role="tab"
+                  aria-selected="false" type="button">
+            <i class="bi bi-calendar3 me-1"></i>Calendar Sharing
+          </button>
+        </div>
+
+        <!-- ══ Gmail Delegation section ══════════════════════════════════ -->
+        <div id="del-section-gmail">
+
+          <!-- Policy status bar — shows whether delegation is allowed for this OU -->
+          <div id="del-policy-bar" class="d-flex align-items-center gap-3 mb-3 p-3 rounded"
+               style="background:#f8f9fa;border:1px solid #dee2e6">
+            <i id="del-policy-icon" class="bi bi-shield text-muted fs-5"></i>
+            <div class="flex-grow-1">
+              <div class="small fw-semibold" id="del-policy-label">Checking policy…</div>
+              <div class="text-muted small" id="del-policy-note"></div>
+            </div>
+            <span class="badge bg-secondary" id="del-policy-badge">Unknown</span>
           </div>
-          <span class="badge bg-secondary" id="del-policy-badge">Unknown</span>
-        </div>
 
-        <!-- Warning if delegation not allowed -->
-        <div id="del-policy-warning" class="alert d-none mb-3 py-2 px-3" role="alert"
-             style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;font-size:0.85rem;color:#664d03">
-          <i class="bi bi-exclamation-triangle-fill me-2"></i>
-          Mail delegation is <strong>not allowed</strong> for this user's organisational unit.
-          Attempts to add delegates may fail.
-        </div>
+          <!-- Warning banner when delegation is explicitly disallowed for the OU -->
+          <div id="del-policy-warning" class="alert d-none mb-3 py-2 px-3" role="alert"
+               style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;font-size:0.85rem;color:#664d03">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            Mail delegation is <strong>not allowed</strong> for this user's organisational unit.
+            Attempts to add delegates may fail.
+          </div>
 
-        <!-- ── Mail Delegation ──────────────────────────────────────── -->
-        <div class="mb-4">
-          <p class="text-muted text-uppercase fw-semibold mb-3"
-             style="font-size:0.72rem;letter-spacing:0.06em">
-            <i class="bi bi-envelope me-1"></i>Mail Delegation
-          </p>
-
-          <!-- Current delegates -->
+          <!-- Current delegates list -->
+          <p class="text-muted text-uppercase fw-semibold mb-2"
+             style="font-size:0.72rem;letter-spacing:0.06em">Current Delegates</p>
           <div id="del-delegates-list" class="mb-3"></div>
 
           <!-- Add delegate -->
+          <p class="text-muted text-uppercase fw-semibold mb-2"
+             style="font-size:0.72rem;letter-spacing:0.06em">Add Delegate</p>
           <div class="d-flex gap-2 align-items-start">
             <div class="flex-grow-1">
               <input type="email" id="del-add-input" class="form-control form-control-sm"
-                     placeholder="delegate@example.com" />
+                     placeholder="delegate@example.com"
+                     list="del-add-list" autocomplete="off" />
+              <datalist id="del-add-list"></datalist>
             </div>
             <button id="btn-del-add" class="btn btn-sm btn-outline-primary" type="button">
               <i class="bi bi-plus me-1"></i>Add Delegate
             </button>
           </div>
-        </div>
 
-        <!-- ── Calendar Sharing ─────────────────────────────────────── -->
-        <div>
-          <p class="text-muted text-uppercase fw-semibold mb-3"
-             style="font-size:0.72rem;letter-spacing:0.06em">
-            <i class="bi bi-calendar3 me-1"></i>Calendar Sharing
-          </p>
+        </div><!-- /#del-section-gmail -->
 
-          <!-- Calendar not enabled notice -->
-          <div id="del-cal-disabled" class="text-muted small" style="display:none">
-            <i class="bi bi-calendar-x me-1 text-warning"></i>Calendar is not enabled for this user.
+        <!-- ══ Calendar Sharing section ══════════════════════════════════ -->
+        <div id="del-section-calendar" style="display:none">
+
+          <!-- Shown when Google Calendar is not provisioned for this user -->
+          <div id="del-cal-disabled" class="text-muted small mb-3" style="display:none">
+            <i class="bi bi-calendar-x me-1 text-warning"></i>
+            Google Calendar is not enabled for this user.
           </div>
 
-          <!-- Calendar sharing content (only shown when calendar is enabled) -->
+          <!-- Calendar sharing content — shown when Calendar is enabled -->
           <div id="del-cal-content" style="display:none">
-            <div class="mb-2 small text-muted">
-              Primary calendar: <strong id="del-cal-name"></strong>
+
+            <!-- Calendar identity -->
+            <div class="d-flex align-items-center gap-2 mb-3 p-3 rounded"
+                 style="background:#f8f9fa;border:1px solid #dee2e6">
+              <i class="bi bi-calendar-check text-success fs-5"></i>
+              <div>
+                <div class="small fw-semibold" id="del-cal-name"></div>
+                <div class="text-muted small">Primary calendar</div>
+              </div>
             </div>
 
             <!-- Existing ACL entries -->
-            <div id="del-acl-list" class="mb-3"></div>
+            <p class="text-muted text-uppercase fw-semibold mb-2"
+               style="font-size:0.72rem;letter-spacing:0.06em">Current Permissions</p>
+            <div id="del-acl-list" class="mb-4"></div>
 
             <!-- Add calendar share -->
+            <p class="text-muted text-uppercase fw-semibold mb-2"
+               style="font-size:0.72rem;letter-spacing:0.06em">Share Calendar</p>
             <div class="xfer-opts-panel">
-              <p class="small fw-semibold mb-2">Share with user</p>
               <div class="row g-2 align-items-end">
                 <div class="col-sm-5">
-                  <label class="form-label small mb-1" for="del-cal-grantee">Grantee email</label>
+                  <label class="form-label small mb-1" for="del-cal-grantee">Share with</label>
                   <input type="email" id="del-cal-grantee" class="form-control form-control-sm"
-                         placeholder="user@example.com" />
+                         placeholder="user@example.com"
+                         list="del-cal-grantee-list" autocomplete="off" />
+                  <datalist id="del-cal-grantee-list"></datalist>
                 </div>
                 <div class="col-sm-4">
-                  <label class="form-label small mb-1">Role</label>
+                  <label class="form-label small mb-1">Permission level</label>
                   <div class="d-flex flex-column gap-1">
                     <div class="form-check mb-0">
                       <input class="form-check-input" type="radio" name="cal-acl-role"
                              id="cal-role-freeBusy" value="freeBusyReader" />
-                      <label class="form-check-label small" for="cal-role-freeBusy">Free/Busy only</label>
+                      <label class="form-check-label small" for="cal-role-freeBusy">
+                        <span class="fw-semibold">Free/Busy</span>
+                        <span class="text-muted"> — see only availability</span>
+                      </label>
                     </div>
                     <div class="form-check mb-0">
                       <input class="form-check-input" type="radio" name="cal-acl-role"
                              id="cal-role-reader" value="reader" checked />
-                      <label class="form-check-label small" for="cal-role-reader">View all details</label>
+                      <label class="form-check-label small" for="cal-role-reader">
+                        <span class="fw-semibold">Viewer</span>
+                        <span class="text-muted"> — see all event details</span>
+                      </label>
                     </div>
                     <div class="form-check mb-0">
                       <input class="form-check-input" type="radio" name="cal-acl-role"
                              id="cal-role-writer" value="writer" />
-                      <label class="form-check-label small" for="cal-role-writer">Make changes</label>
+                      <label class="form-check-label small" for="cal-role-writer">
+                        <span class="fw-semibold">Editor</span>
+                        <span class="text-muted"> — create and edit events</span>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -969,8 +1047,9 @@
                 </div>
               </div>
             </div>
+
           </div><!-- /#del-cal-content -->
-        </div><!-- /calendar section -->
+        </div><!-- /#del-section-calendar -->
 
       </div><!-- /#del-content -->
     </div><!-- /.del-card -->
@@ -2253,7 +2332,8 @@ function refreshXferStatus(transferId, cardEl) {
 var delState = {
   initialized:      false,
   currentUserEmail: null,
-  currentOrgUnitPath: null
+  currentOrgUnitPath: null,
+  activeTab:        'gmail'
 };
 
 /**
@@ -2271,6 +2351,31 @@ function initDelegationPage() {
   document.getElementById('btn-del-load').addEventListener('click', loadDelegationData);
   document.getElementById('btn-del-add').addEventListener('click', doAddDelegate);
   document.getElementById('btn-del-cal-share').addEventListener('click', doAddCalendarAcl);
+
+  // Wire sub-tab pill buttons
+  document.querySelectorAll('.del-sub-tab').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      showDelTab(this.dataset.tab);
+    });
+  });
+}
+
+/**
+ * Switches the Delegation page between Gmail and Calendar sub-tabs.
+ *
+ * @param {string} tab  'gmail' or 'calendar'
+ */
+function showDelTab(tab) {
+  delState.activeTab = tab;
+
+  document.getElementById('del-section-gmail').style.display     = tab === 'gmail'    ? '' : 'none';
+  document.getElementById('del-section-calendar').style.display  = tab === 'calendar' ? '' : 'none';
+
+  document.querySelectorAll('.del-sub-tab').forEach(function(btn) {
+    var isActive = btn.dataset.tab === tab;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
 }
 
 /**
@@ -2286,7 +2391,9 @@ function populateDelUserLists() {
       escapeHtml(label) + '</option>'
     );
   }).join('');
-  document.getElementById('del-user-list').innerHTML = opts;
+  document.getElementById('del-user-list').innerHTML         = opts;
+  document.getElementById('del-add-list').innerHTML          = opts;
+  document.getElementById('del-cal-grantee-list').innerHTML  = opts;
 }
 
 /**
@@ -2312,6 +2419,7 @@ function loadDelegationData() {
       renderPolicyBadge(result.delegationAllowed, result.policyNote);
       renderDelegates(result.delegates);
       document.getElementById('del-content').style.display = '';
+      showDelTab(delState.activeTab || 'gmail');
     })
     .withFailureHandler(function(err) {
       document.getElementById('del-loading').style.display = 'none';
