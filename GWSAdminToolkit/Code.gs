@@ -14,14 +14,21 @@
  */
 
 // ─── OAuth2 scopes ────────────────────────────────────────────────────────────
-
-/** Scope for listing users via the Admin Directory API. */
-const SCOPE_DIRECTORY_READ_ =
-  'https://www.googleapis.com/auth/admin.directory.user.readonly';
+//
+// These scopes are passed to getServiceAccountToken_() for APIs that require
+// DWD user impersonation or have no Apps Script advanced service.
+//
+// Admin Directory (users, groups, OUs) and Google Sheets are handled by the
+// AdminDirectory advanced service and SpreadsheetApp respectively — those
+// APIs no longer need service account tokens.
 
 /** Scope for reading and writing Gmail send-as settings (signatures). */
 const SCOPE_GMAIL_SETTINGS_ =
   'https://www.googleapis.com/auth/gmail.settings.basic';
+
+/** Scope for the Enterprise License Manager API. */
+const SCOPE_LICENSING_ =
+  'https://www.googleapis.com/auth/apps.licensing';
 
 // ─── Web app entry point ──────────────────────────────────────────────────────
 
@@ -96,47 +103,23 @@ function getAvailableVariables() {
  * @returns {{ users: Array<{primaryEmail:string, name:{fullName:string}, suspended:boolean, thumbnailPhotoUrl:string}>, nextPageToken: string|null }}
  */
 function getUsers(pageToken) {
-  const { adminEmail, domain } = getConfig();
-  const token = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
-
-  // Build query string manually for V8/Apps Script compatibility.
-  //
-  // Use customer=my_customer instead of domain= so that users from ALL domains
-  // in the Workspace account are returned (primary domain + any secondary /
-  // alias domains such as strataprimedemo.com alongside demo.strataprime.com).
-  // The domain= parameter restricts results to a single domain only.
-  let url =
-    'https://admin.googleapis.com/admin/directory/v1/users' +
-    '?customer=my_customer' +
-    '&maxResults=100' +
-    '&orderBy=email' +
-    // Request only the fields we need to minimise response size
-    '&fields=' + encodeURIComponent(
-      // isMailboxSetup = true only for accounts that have Gmail provisioned;
-      // we surface this in the sidebar so admins can filter non-Gmail accounts.
+  // Uses the AdminDirectory advanced service (runs as the deploying admin's
+  // credentials — no service account token needed for this admin-level call).
+  var params = {
+    customer:   'my_customer',
+    maxResults: 100,
+    orderBy:    'email',
+    // isMailboxSetup=true only for accounts with Gmail provisioned;
+    // we surface this in the sidebar so admins can filter non-Gmail accounts.
+    fields:
       'users(primaryEmail,name/fullName,thumbnailPhotoUrl,suspended,isMailboxSetup,orgUnitPath),' +
       'nextPageToken'
-    );
+  };
+  if (pageToken) params.pageToken = pageToken;
 
-  if (pageToken) {
-    url += '&pageToken=' + encodeURIComponent(pageToken);
-  }
-
-  const response = UrlFetchApp.fetch(url, {
-    headers: { Authorization: 'Bearer ' + token },
-    muteHttpExceptions: true
-  });
-
-  if (response.getResponseCode() !== 200) {
-    throw new Error(
-      'Directory API error (' + response.getResponseCode() + '): ' +
-      response.getContentText()
-    );
-  }
-
-  const data = JSON.parse(response.getContentText());
+  var data = AdminDirectory.Users.list(params);
   return {
-    users: data.users || [],
+    users:         data.users         || [],
     nextPageToken: data.nextPageToken || null
   };
 }
@@ -235,12 +218,6 @@ function updateUserSignature(userEmail, htmlTemplate) {
  * @returns {{ updated: number, failed: Array<{email:string, error:string}> }}
  */
 function updateAllUsersSignature(htmlTemplate) {
-  const { adminEmail } = getConfig();
-
-  // Obtain one directory token to reuse across all profile fetches;
-  // valid for 1 hour (sufficient for domains up to ~500 users).
-  const dirToken = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
-
   const results = { updated: 0, failed: [] };
   let pageToken  = null;
 
@@ -257,7 +234,7 @@ function updateAllUsersSignature(htmlTemplate) {
       if (user.suspended || user.isMailboxSetup === false) continue;
 
       try {
-        var profile  = getUserProfile_(user.primaryEmail, dirToken);
+        var profile  = getUserProfile_(user.primaryEmail);
         var vars     = extractVariables_(profile);
         var rendered = substituteVariables_(htmlTemplate, vars);
         updateSignatureForUser_(user.primaryEmail, rendered);
@@ -345,40 +322,15 @@ function getGmailToken_(userEmail) {
  * Fetches a user's full Directory profile, including name parts, phones, and
  * organization info needed for variable substitution.
  *
- * @param {string} userEmail   User's primary email address.
- * @param {string} [dirToken]  Pre-fetched directory token. When calling in a
- *                             loop, pass a cached token to avoid one token
- *                             request per user. Omit for one-off calls.
+ * Uses the AdminDirectory advanced service — no service account token needed.
+ *
+ * @param {string} userEmail  User's primary email address.
  * @returns {object} Raw user resource from the Directory API.
  */
-function getUserProfile_(userEmail, dirToken) {
-  var token = dirToken;
-  if (!token) {
-    var adminEmail = getConfig().adminEmail;
-    token = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
-  }
-
-  var url =
-    'https://admin.googleapis.com/admin/directory/v1/users/' +
-    encodeURIComponent(userEmail) +
-    '?fields=' + encodeURIComponent(
-      'primaryEmail,name(givenName,familyName,fullName),phones,organizations'
-    );
-
-  var response = UrlFetchApp.fetch(url, {
-    headers: { Authorization: 'Bearer ' + token },
-    muteHttpExceptions: true
+function getUserProfile_(userEmail) {
+  return AdminDirectory.Users.get(userEmail, {
+    fields: 'primaryEmail,name(givenName,familyName,fullName),phones,organizations'
   });
-
-  if (response.getResponseCode() !== 200) {
-    throw new Error(
-      'Could not fetch profile for ' + userEmail +
-      ' (' + response.getResponseCode() + '): ' +
-      response.getContentText()
-    );
-  }
-
-  return JSON.parse(response.getContentText());
 }
 
 /**
@@ -453,10 +405,6 @@ const SCOPE_GMAIL_DELEGATION_  =
 const SCOPE_CALENDAR_ =
   'https://www.googleapis.com/auth/calendar';
 
-/** Scope for reading organisational unit records from the Directory API. */
-const SCOPE_DIRECTORY_ORGUNIT_ =
-  'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
-
 /** Scope for reading policies via the Cloud Identity Policy API. */
 const SCOPE_CLOUD_IDENTITY_POLICIES_ =
   'https://www.googleapis.com/auth/cloud-identity.policies';
@@ -506,14 +454,12 @@ function getDataTransferApplications() {
  */
 function createDataTransfer(fromEmail, toEmail, appTransfers) {
   const { adminEmail } = getConfig();
-
-  // Obtain both tokens up front; each JWT exchange counts against quota.
-  const dirToken  = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
   const xferToken = getServiceAccountToken_(adminEmail, [SCOPE_DATATRANSFER_]);
 
   // Data Transfer API requires immutable user IDs, not email addresses.
-  const fromId = getUserId_(fromEmail, dirToken);
-  const toId   = getUserId_(toEmail,   dirToken);
+  // getUserId_ uses AdminDirectory advanced service — no token needed.
+  const fromId = getUserId_(fromEmail);
+  const toId   = getUserId_(toEmail);
 
   const payload = {
     oldOwnerUserId: fromId,
@@ -582,34 +528,13 @@ function getDataTransferStatus(transferId) {
  * Resolves a user's primary email to their immutable Directory user ID.
  * The Data Transfer API requires the immutable ID rather than an email address.
  *
- * @param {string} email     User's primary email address.
- * @param {string} dirToken  Pre-fetched Directory API token (optional).
+ * Uses the AdminDirectory advanced service — no service account token needed.
+ *
+ * @param {string} email  User's primary email address.
  * @returns {string} Immutable user ID.
  */
-function getUserId_(email, dirToken) {
-  var token = dirToken;
-  if (!token) {
-    token = getServiceAccountToken_(getConfig().adminEmail, [SCOPE_DIRECTORY_READ_]);
-  }
-
-  var response = UrlFetchApp.fetch(
-    'https://admin.googleapis.com/admin/directory/v1/users/' +
-    encodeURIComponent(email) + '?fields=id',
-    {
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
-    }
-  );
-
-  if (response.getResponseCode() !== 200) {
-    throw new Error(
-      'User not found: ' + email +
-      ' (' + response.getResponseCode() + '): ' +
-      response.getContentText()
-    );
-  }
-
-  return JSON.parse(response.getContentText()).id;
+function getUserId_(email) {
+  return AdminDirectory.Users.get(email, { fields: 'id' }).id;
 }
 
 // ─── Mail Delegation ──────────────────────────────────────────────────────────
@@ -753,10 +678,8 @@ function checkMailDelegationPolicy(orgUnitPath) {
   const allPolicies = JSON.parse(policyResp.getContentText()).policies || [];
   if (!allPolicies.length) return { allowed: null, note: null };
 
-  // Step 2 — resolve each policy's OU resource name ("orgUnits/<id>") to its path.
-  // The Policy API returns only the OU ID; we look up the path via Directory API
-  // using the "id:" prefix (same as GAM's /orgunits/id:<id> calls).
-  const dirToken = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_ORGUNIT_]);
+  // Step 2 — resolve each policy's OU resource name ("orgUnits/<id>") to its path
+  // using the AdminDirectory advanced service (no service account token needed).
   const ouPathMap = {}; // "orgUnits/<id>" → "/Some/OU/Path"
 
   for (var i = 0; i < allPolicies.length; i++) {
@@ -765,14 +688,8 @@ function checkMailDelegationPolicy(orgUnitPath) {
 
     var ouId = ouResource.replace(/^orgUnits\//, '');
     try {
-      var ouResp = UrlFetchApp.fetch(
-        'https://admin.googleapis.com/admin/directory/v1/customer/my_customer/orgunits/id:' +
-        ouId + '?fields=orgUnitPath',
-        { headers: { Authorization: 'Bearer ' + dirToken }, muteHttpExceptions: true }
-      );
-      ouPathMap[ouResource] = ouResp.getResponseCode() === 200
-        ? (JSON.parse(ouResp.getContentText()).orgUnitPath || '/')
-        : '/';
+      var ou = AdminDirectory.Orgunits.get('my_customer', 'id:' + ouId, { fields: 'orgUnitPath' });
+      ouPathMap[ouResource] = ou.orgUnitPath || '/';
     } catch (e) {
       ouPathMap[ouResource] = '/';
     }
@@ -936,4 +853,543 @@ function removeCalendarAcl(ownerEmail, ruleId) {
   }
 
   return { success: true };
+}
+
+// ─── License Management ───────────────────────────────────────────────────────
+
+/** Base URL for the Enterprise License Manager API v1. */
+var LICENSE_API_BASE_ =
+  'https://www.googleapis.com/apps/licensing/v1/product/';
+
+/**
+ * Returns the static catalog of Google Workspace product + SKU combinations.
+ *
+ * Product and SKU IDs sourced from:
+ * https://developers.google.com/workspace/admin/licensing/v1/how-tos/products
+ *
+ * Update this list if your domain uses products not included here.
+ *
+ * @returns {Array<{productId, productName, skus: Array<{skuId, skuName}>}>}
+ */
+function getLicenseProducts() {
+  return [
+    {
+      productId: 'Google-Apps',
+      productName: 'Google Workspace',
+      skus: [
+        { skuId: '1010020020', skuName: 'Business Starter' },
+        { skuId: '1010020021', skuName: 'Business Starter – Archived' },
+        { skuId: '1010020025', skuName: 'Business Standard' },
+        { skuId: '1010020027', skuName: 'Business Standard – Archived' },
+        { skuId: '1010020026', skuName: 'Business Plus' },
+        { skuId: '1010020023', skuName: 'Business Plus – Archived' },
+        { skuId: '1010020028', skuName: 'Enterprise Standard' },
+        { skuId: '1010020029', skuName: 'Enterprise Standard – Archived' },
+        { skuId: '1010020030', skuName: 'Enterprise Plus' },
+        { skuId: '1010020031', skuName: 'Enterprise Plus – Archived' },
+        { skuId: '1010060001', skuName: 'Enterprise Essentials' },
+        { skuId: '1010060003', skuName: 'Essentials' },
+        { skuId: '1010060005', skuName: 'Enterprise Essentials Plus' },
+        { skuId: '1010020034', skuName: 'Frontline Starter' },
+        { skuId: '1010020035', skuName: 'Frontline Standard' },
+        { skuId: '1010310002', skuName: 'Education Fundamentals' },
+        { skuId: '1010310003', skuName: 'Education Standard' },
+        { skuId: '1010310001', skuName: 'Education Plus – Legacy' },
+        { skuId: '1010310005', skuName: 'Education Plus' },
+        { skuId: '1010310004', skuName: 'Teaching and Learning Upgrade' },
+        { skuId: 'Google-Apps-For-Business', skuName: 'G Suite Basic (Legacy)' },
+        { skuId: 'Google-Apps-Unlimited',    skuName: 'G Suite Business (Legacy)' },
+      ]
+    },
+    {
+      productId: 'Google-Vault',
+      productName: 'Google Vault',
+      skus: [
+        { skuId: 'Google-Vault',                  skuName: 'Google Vault' },
+        { skuId: 'Google-Vault-Former-Employee',   skuName: 'Former Employee' },
+      ]
+    },
+    {
+      productId: 'Google-Drive-storage',
+      productName: 'Google Drive Storage',
+      skus: [
+        { skuId: 'Google-Drive-storage-20GB',  skuName: '20 GB' },
+        { skuId: 'Google-Drive-storage-50GB',  skuName: '50 GB' },
+        { skuId: 'Google-Drive-storage-200GB', skuName: '200 GB' },
+        { skuId: 'Google-Drive-storage-400GB', skuName: '400 GB' },
+        { skuId: 'Google-Drive-storage-1TB',   skuName: '1 TB' },
+        { skuId: 'Google-Drive-storage-2TB',   skuName: '2 TB' },
+        { skuId: 'Google-Drive-storage-4TB',   skuName: '4 TB' },
+        { skuId: 'Google-Drive-storage-8TB',   skuName: '8 TB' },
+        { skuId: 'Google-Drive-storage-16TB',  skuName: '16 TB' },
+      ]
+    },
+    {
+      productId: 'Cloud-Identity',
+      productName: 'Cloud Identity',
+      skus: [
+        { skuId: '1010050001', skuName: 'Cloud Identity Free' },
+        { skuId: '1010050004', skuName: 'Cloud Identity Premium' },
+      ]
+    },
+    {
+      productId: 'Google-Chrome-Device-Management',
+      productName: 'Chrome Enterprise',
+      skus: [
+        { skuId: 'Google-Chrome-Device-Management', skuName: 'Chrome Enterprise' },
+      ]
+    },
+  ];
+}
+
+/**
+ * Returns all license assignments for a user across all known products/SKUs.
+ * Uses fetchAll for parallel requests to minimise latency.
+ *
+ * @param {string} userEmail
+ * @returns {{ licenses: Array<{productId, productName, skuId, skuName}> }}
+ */
+function getUserLicenses(userEmail) {
+  const { adminEmail } = getConfig();
+  const token    = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
+  const products = getLicenseProducts();
+
+  var requests = [];
+  var meta     = [];
+
+  products.forEach(function(product) {
+    product.skus.forEach(function(sku) {
+      requests.push({
+        url: LICENSE_API_BASE_ +
+          encodeURIComponent(product.productId) + '/sku/' +
+          encodeURIComponent(sku.skuId) + '/user/' +
+          encodeURIComponent(userEmail),
+        headers: { Authorization: 'Bearer ' + token },
+        muteHttpExceptions: true
+      });
+      meta.push({ product: product, sku: sku });
+    });
+  });
+
+  var responses = UrlFetchApp.fetchAll(requests);
+  var licenses  = [];
+
+  responses.forEach(function(resp, i) {
+    if (resp.getResponseCode() === 200) {
+      licenses.push({
+        productId:   meta[i].product.productId,
+        productName: meta[i].product.productName,
+        skuId:       meta[i].sku.skuId,
+        skuName:     meta[i].sku.skuName
+      });
+    }
+  });
+
+  return { licenses: licenses };
+}
+
+/**
+ * Counts the number of users assigned to a specific product + SKU.
+ * Paginates up to 50,000 users and sets capped=true if that limit is reached.
+ *
+ * @param {string} productId
+ * @param {string} skuId
+ * @returns {{ count: number, capped: boolean }}
+ */
+function getLicenseCount(productId, skuId) {
+  const { adminEmail } = getConfig();
+  const token      = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
+  const MAX_RESULTS = 1000;
+  const MAX_PAGES   = 50;
+
+  var count = 0;
+  var capped = false;
+  var pageToken = null;
+  var page = 0;
+
+  do {
+    var url =
+      LICENSE_API_BASE_ + encodeURIComponent(productId) +
+      '/sku/' + encodeURIComponent(skuId) +
+      '/users?maxResults=' + MAX_RESULTS + '&customerId=my_customer';
+    if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+
+    var resp = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+
+    if (resp.getResponseCode() !== 200) break;
+
+    var data = JSON.parse(resp.getContentText());
+    count += (data.items || []).length;
+    pageToken = data.nextPageToken || null;
+    page++;
+
+    if (page >= MAX_PAGES && pageToken) { capped = true; break; }
+  } while (pageToken);
+
+  return { count: count, capped: capped };
+}
+
+/**
+ * Assigns a license to a user.
+ *
+ * A 412 response indicates the user's OU has automatic licensing enabled and
+ * the assignment cannot be overridden via the API.
+ *
+ * @param {string} userEmail
+ * @param {string} productId
+ * @param {string} skuId
+ * @returns {object} The created LicenseAssignment resource.
+ */
+function assignLicense(userEmail, productId, skuId) {
+  const { adminEmail } = getConfig();
+  const token = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
+
+  var resp = UrlFetchApp.fetch(
+    LICENSE_API_BASE_ + encodeURIComponent(productId) +
+    '/sku/' + encodeURIComponent(skuId) + '/user',
+    {
+      method: 'POST',
+      headers: {
+        Authorization:  'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({ userId: userEmail }),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (resp.getResponseCode() !== 200) {
+    if (resp.getResponseCode() === 412) {
+      throw new Error(
+        'License cannot be assigned — the user\'s OU may have automatic licensing ' +
+        'enabled. Disable auto-licensing for their OU in the Admin Console first. ' +
+        'Details: ' + resp.getContentText()
+      );
+    }
+    throw new Error(
+      'Assign license failed (' + resp.getResponseCode() + '): ' + resp.getContentText()
+    );
+  }
+
+  return JSON.parse(resp.getContentText());
+}
+
+/**
+ * Switches a user from one SKU to another within the same product.
+ * Uses the licenseAssignments.update (PUT) method.
+ *
+ * @param {string} userEmail
+ * @param {string} productId   Must be the same product for both SKUs.
+ * @param {string} oldSkuId    Current SKU.
+ * @param {string} newSkuId    Target SKU.
+ * @returns {object} The updated LicenseAssignment resource.
+ */
+function switchLicense(userEmail, productId, oldSkuId, newSkuId) {
+  const { adminEmail } = getConfig();
+  const token = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
+
+  var resp = UrlFetchApp.fetch(
+    LICENSE_API_BASE_ + encodeURIComponent(productId) +
+    '/sku/' + encodeURIComponent(oldSkuId) +
+    '/user/' + encodeURIComponent(userEmail),
+    {
+      method: 'PUT',
+      headers: {
+        Authorization:  'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify({ skuId: newSkuId }),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (resp.getResponseCode() !== 200) {
+    if (resp.getResponseCode() === 412) {
+      throw new Error(
+        'License cannot be switched — the user\'s OU may have automatic licensing ' +
+        'enabled. Details: ' + resp.getContentText()
+      );
+    }
+    throw new Error(
+      'Switch license failed (' + resp.getResponseCode() + '): ' + resp.getContentText()
+    );
+  }
+
+  return JSON.parse(resp.getContentText());
+}
+
+/**
+ * Removes a license from a user.
+ *
+ * @param {string} userEmail
+ * @param {string} productId
+ * @param {string} skuId
+ * @returns {{ success: boolean }}
+ */
+function unassignLicense(userEmail, productId, skuId) {
+  const { adminEmail } = getConfig();
+  const token = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
+
+  var resp = UrlFetchApp.fetch(
+    LICENSE_API_BASE_ + encodeURIComponent(productId) +
+    '/sku/' + encodeURIComponent(skuId) +
+    '/user/' + encodeURIComponent(userEmail),
+    {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    }
+  );
+
+  if (resp.getResponseCode() !== 200 && resp.getResponseCode() !== 204) {
+    throw new Error(
+      'Unassign license failed (' + resp.getResponseCode() + '): ' + resp.getContentText()
+    );
+  }
+
+  return { success: true };
+}
+
+/**
+ * Lists all groups in the domain (up to 1,000).
+ *
+ * @returns {{ groups: Array<{email: string, name: string}> }}
+ */
+function getGroups() {
+  var groups    = [];
+  var pageToken = null;
+
+  do {
+    var params = {
+      customer:   'my_customer',
+      maxResults: 200,
+      orderBy:    'email',
+      fields:     'groups(email,name),nextPageToken'
+    };
+    if (pageToken) params.pageToken = pageToken;
+
+    var data  = AdminDirectory.Groups.list(params);
+    groups    = groups.concat(data.groups || []);
+    pageToken = data.nextPageToken || null;
+  } while (pageToken && groups.length < 1000);
+
+  return { groups: groups };
+}
+
+/**
+ * Returns the email addresses of all USER members of a group.
+ * includeDerivedMembership=true expands nested groups transitively.
+ *
+ * @param {string} groupEmail
+ * @returns {{ members: string[] }}
+ */
+function getGroupMembers(groupEmail) {
+  var members   = [];
+  var pageToken = null;
+
+  do {
+    var params = {
+      maxResults:               200,
+      includeDerivedMembership: true,
+      fields:                   'members(email,type,status),nextPageToken'
+    };
+    if (pageToken) params.pageToken = pageToken;
+
+    var data = AdminDirectory.Members.list(groupEmail, params);
+    (data.members || []).forEach(function(m) {
+      if (m.type === 'USER' && m.status === 'ACTIVE') {
+        members.push(m.email.toLowerCase());
+      }
+    });
+    pageToken = data.nextPageToken || null;
+  } while (pageToken);
+
+  return { members: members };
+}
+
+/**
+ * Runs or previews a license sync for a group.
+ *
+ * Sync rules:
+ *   1. User IN group, has target SKU              → NO_CHANGE
+ *   2. User IN group, has different SKU (product) → SWITCH
+ *   3. User IN group, no license in product       → ASSIGN
+ *   4. User NOT in group, has license in product  → REMOVE
+ *
+ * @param {string}  groupEmail  Group whose members define the licensed set.
+ * @param {string}  productId   Product family to manage.
+ * @param {string}  skuId       Target SKU to enforce.
+ * @param {boolean} dryRun      If true, returns proposed changes without applying them.
+ * @returns {{ changes: Array, applied: boolean }}
+ */
+function syncLicensesForGroup(groupEmail, productId, skuId, dryRun) {
+  const { adminEmail } = getConfig();
+  const licToken = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
+
+  // Resolve group membership
+  var memberResult = getGroupMembers(groupEmail);
+  var memberSet    = {};
+  memberResult.members.forEach(function(email) { memberSet[email] = true; });
+
+  // Get all current licensees for this product (any SKU)
+  var currentLicensees = getLicensedUsersForProduct_(productId, licToken);
+
+  // Build change list
+  var changes = [];
+
+  // Process group members
+  Object.keys(memberSet).forEach(function(email) {
+    var currentSku = currentLicensees[email];
+    if (!currentSku) {
+      changes.push({ action: 'ASSIGN',    email: email, fromSku: null,       toSku: skuId });
+    } else if (currentSku === skuId) {
+      changes.push({ action: 'NO_CHANGE', email: email, fromSku: currentSku, toSku: skuId });
+    } else {
+      changes.push({ action: 'SWITCH',    email: email, fromSku: currentSku, toSku: skuId });
+    }
+  });
+
+  // Process licensed users NOT in the group
+  Object.keys(currentLicensees).forEach(function(email) {
+    if (!memberSet[email]) {
+      changes.push({ action: 'REMOVE', email: email, fromSku: currentLicensees[email], toSku: null });
+    }
+  });
+
+  if (dryRun) {
+    return { changes: changes, applied: false };
+  }
+
+  // Apply changes
+  var results = changes.map(function(change) {
+    if (change.action === 'NO_CHANGE') {
+      return mergeObj_(change, { status: 'skipped' });
+    }
+    try {
+      if (change.action === 'ASSIGN') {
+        assignLicense(change.email, productId, skuId);
+      } else if (change.action === 'SWITCH') {
+        switchLicense(change.email, productId, change.fromSku, skuId);
+      } else if (change.action === 'REMOVE') {
+        unassignLicense(change.email, productId, change.fromSku);
+      }
+      return mergeObj_(change, { status: 'success' });
+    } catch (e) {
+      return mergeObj_(change, { status: 'error', error: e.message });
+    }
+  });
+
+  return { changes: results, applied: true };
+}
+
+/**
+ * Writes a sync change list to a Google Sheet.
+ * Creates a new spreadsheet if sheetId is null; appends to existing otherwise.
+ *
+ * @param {string}      groupEmail
+ * @param {string}      productId
+ * @param {string}      skuId
+ * @param {Array}       changes     Change array from syncLicensesForGroup().
+ * @param {string|null} sheetId     Existing spreadsheet ID, or null to create new.
+ * @returns {{ spreadsheetId: string, spreadsheetUrl: string }}
+ */
+function writeSyncLog(groupEmail, productId, skuId, changes, sheetId) {
+  // Uses SpreadsheetApp (built-in service) — no service account token needed.
+  var sheetTab = 'License Sync';
+  var ss;
+
+  if (sheetId) {
+    ss = SpreadsheetApp.openById(sheetId);
+  } else {
+    // Create a new spreadsheet in the deploying admin's Drive.
+    ss = SpreadsheetApp.create(
+      'License Sync Log \u2013 ' + new Date().toISOString().slice(0, 10)
+    );
+    var defaultSheet = ss.getSheets()[0];
+    defaultSheet.setName(sheetTab);
+    defaultSheet.appendRow([
+      'Timestamp', 'Group', 'Product ID', 'SKU ID',
+      'User Email', 'Action', 'From SKU', 'To SKU', 'Status', 'Error'
+    ]);
+  }
+
+  var sheet = ss.getSheetByName(sheetTab);
+  if (!sheet) {
+    // Tab doesn't exist yet in an existing spreadsheet — create it with header.
+    sheet = ss.insertSheet(sheetTab);
+    sheet.appendRow([
+      'Timestamp', 'Group', 'Product ID', 'SKU ID',
+      'User Email', 'Action', 'From SKU', 'To SKU', 'Status', 'Error'
+    ]);
+  }
+
+  var ts = new Date().toISOString();
+  changes
+    .filter(function(c) { return c.action !== 'NO_CHANGE'; })
+    .forEach(function(c) {
+      sheet.appendRow([
+        ts, groupEmail, productId, skuId,
+        c.email, c.action,
+        c.fromSku || '', c.toSku || '',
+        c.status  || 'dry_run', c.error || ''
+      ]);
+    });
+
+  return {
+    spreadsheetId: ss.getId(),
+    url:           ss.getUrl()
+  };
+}
+
+// ── Private helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Returns { lowerEmail: skuId } for all users licensed under productId (any SKU).
+ *
+ * @param {string} productId
+ * @param {string} token  Pre-fetched licensing token.
+ * @returns {Object}
+ */
+function getLicensedUsersForProduct_(productId, token) {
+  var result    = {};
+  var pageToken = null;
+
+  do {
+    var url =
+      LICENSE_API_BASE_ + encodeURIComponent(productId) +
+      '/users?maxResults=1000&customerId=my_customer';
+    if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+
+    var resp = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+
+    if (resp.getResponseCode() !== 200) break;
+
+    var data = JSON.parse(resp.getContentText());
+    (data.items || []).forEach(function(item) {
+      result[item.userId.toLowerCase()] = item.skuId;
+    });
+    pageToken = data.nextPageToken || null;
+  } while (pageToken);
+
+  return result;
+}
+
+/**
+ * Shallow-merges two plain objects (V8-compatible replacement for Object.assign).
+ *
+ * @param {Object} base
+ * @param {Object} extra
+ * @returns {Object}
+ */
+function mergeObj_(base, extra) {
+  var result = {};
+  Object.keys(base).forEach(function(k)  { result[k] = base[k];  });
+  Object.keys(extra).forEach(function(k) { result[k] = extra[k]; });
+  return result;
 }
