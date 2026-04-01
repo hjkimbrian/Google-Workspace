@@ -98,28 +98,34 @@ Missing fields are silently replaced with an empty string.
 
 ## Step 2 — Enable required APIs
 
-In your GCP project, enable these APIs:
+### 2a — In the GCP project
 
-1. **Admin SDK API**
+1. **Admin SDK API** — covers Directory, Data Transfer, and OU lookups
    - *APIs & Services → Library → search "Admin SDK API" → Enable*
 
 2. **Gmail API**
    - *APIs & Services → Library → search "Gmail API" → Enable*
 
-3. **Admin Data Transfer API** *(required for the Data Transfer tab)*
-   - *APIs & Services → Library → search "Admin SDK API"* — the Data Transfer API is part of the Admin SDK and is enabled alongside it. If you see it listed separately as "Data Transfer API", enable it too.
-
-4. **Google Calendar API** *(required for the Delegation tab — Calendar Sharing)*
+3. **Google Calendar API** *(Delegation tab — Calendar Sharing)*
    - *APIs & Services → Library → search "Google Calendar API" → Enable*
 
-5. **Cloud Identity API** *(required for the Delegation tab — mail delegation policy check)*
+4. **Cloud Identity API** *(Delegation tab — mail delegation policy check)*
    - *APIs & Services → Library → search "Cloud Identity API" → Enable*
 
-6. **Enterprise License Manager API** *(required for the Licenses tab)*
+5. **Enterprise License Manager API** *(Licenses tab)*
    - *APIs & Services → Library → search "Enterprise License Manager API" → Enable*
 
-7. **Google Sheets API** *(required for the Licenses tab — sync log export)*
-   - *APIs & Services → Library → search "Google Sheets API" → Enable*
+> **Note:** The Google Sheets API is no longer required — sync logs are written using the built-in `SpreadsheetApp` service.
+
+### 2b — In the Apps Script editor
+
+Enable the **Admin Directory** advanced service so the script can call the Directory API as the deploying admin without a service account token:
+
+1. Open the script: *Extensions → Apps Script*.
+2. Click **Services** (the `+` icon in the left sidebar).
+3. Find **Admin SDK API**, select version `directory_v1`, and click **Add**.
+
+The `appsscript.json` manifest in this repo already declares this service — it is enabled automatically when you deploy with [clasp](https://github.com/google/clasp).
 
 ---
 
@@ -155,33 +161,37 @@ In your GCP project, enable these APIs:
 5. Paste the following scopes (comma-separated):
 
 ```
-https://www.googleapis.com/auth/admin.directory.user.readonly,
 https://www.googleapis.com/auth/gmail.settings.basic,
 https://www.googleapis.com/auth/admin.datatransfer,
 https://www.googleapis.com/auth/gmail.settings.sharing,
 https://www.googleapis.com/auth/calendar,
-https://www.googleapis.com/auth/admin.directory.orgunit.readonly,
 https://www.googleapis.com/auth/cloud-identity.policies,
-https://www.googleapis.com/auth/apps.licensing,
-https://www.googleapis.com/auth/admin.directory.group.readonly,
-https://www.googleapis.com/auth/spreadsheets
+https://www.googleapis.com/auth/apps.licensing
 ```
 
 6. Click **Authorise**.
 
 > **Why these scopes?**
+>
+> These are the scopes granted to the **service account** for operations that require impersonating a specific user (DWD) or that have no Apps Script advanced service.
+>
 > | Scope | Used for |
 > |---|---|
-> | `admin.directory.user.readonly` | List domain users; resolve user IDs for Data Transfer |
-> | `gmail.settings.basic` | Read and write Gmail send-as settings (signatures) |
-> | `admin.datatransfer` | Create and monitor data transfers |
-> | `gmail.settings.sharing` | Read, add, and remove Gmail delegates |
-> | `calendar` | Read primary calendar status and manage ACL rules |
-> | `admin.directory.orgunit.readonly` | Resolve OU path → OU ID for policy lookup |
-> | `cloud-identity.policies` | Read mail delegation policy per OU via the Cloud Identity Policy API |
-> | `apps.licensing` | Read, assign, switch, and remove Google Workspace licenses |
-> | `admin.directory.group.readonly` | List domain groups and their members for license sync |
-> | `spreadsheets` | Create and append to Google Sheets for sync audit logs |
+> | `gmail.settings.basic` | Read and write Gmail send-as settings (signatures) — impersonates each user |
+> | `admin.datatransfer` | Create and monitor data transfers — called as admin |
+> | `gmail.settings.sharing` | Read, add, and remove Gmail delegates — impersonates each user |
+> | `calendar` | Read primary calendar status and manage ACL rules — impersonates each user |
+> | `cloud-identity.policies` | Read mail delegation policy per OU (no Apps Script advanced service) |
+> | `apps.licensing` | Assign, switch, and remove Google Workspace licenses (no Apps Script advanced service) |
+>
+> The following are **not** in the DWD list because they are handled by the `AdminDirectory` advanced service and `SpreadsheetApp` built-in, which run as the deploying admin's own OAuth session:
+>
+> | Removed scope | Now handled by |
+> |---|---|
+> | `admin.directory.user.readonly` | `AdminDirectory` advanced service |
+> | `admin.directory.orgunit.readonly` | `AdminDirectory` advanced service |
+> | `admin.directory.group.readonly` | `AdminDirectory` advanced service |
+> | `spreadsheets` | `SpreadsheetApp` built-in service |
 
 ---
 
@@ -197,17 +207,22 @@ https://www.googleapis.com/auth/spreadsheets
 
 ### 5b — Create the script files
 
-Create three files in the editor — one for each file in this folder:
+Create the following files in the editor:
 
-| Apps Script file | Source file in this repo |
-|------------------|--------------------------|
-| `Code.gs` | `GWSAdminToolkit/Code.gs` |
-| `Auth.gs` | `GWSAdminToolkit/Auth.gs` |
-| `Index.html` | `GWSAdminToolkit/Index.html` |
+| Apps Script file | Source file in this repo | Notes |
+|------------------|--------------------------|-------|
+| `Code.gs` | `GWSAdminToolkit/Code.gs` | Main server-side logic |
+| `Auth.gs` | `GWSAdminToolkit/Auth.gs` | Service account JWT helper |
+| `Index.html` | `GWSAdminToolkit/Index.html` | SPA frontend |
+| `Tests.gs` | `GWSAdminToolkit/Tests.gs` | Test suite (optional but recommended) |
 
 > To create a new file: click the **+** button next to *Files*.
 > For `.gs` files choose *Script*; for `.html` choose *HTML*.
 > Paste the contents of each source file exactly as written.
+>
+> If you are using [clasp](https://github.com/google/clasp) to sync from this repo,
+> the `appsscript.json` manifest is included and will configure the `AdminDirectory`
+> advanced service automatically on push.
 
 ---
 
@@ -311,6 +326,35 @@ Script Properties are encrypted at rest and never visible in source code.
 12. If logging was enabled, a toast appears with the Google Sheet URL once the log is written.
 
 > Group sync rules: members without the target SKU are **assigned** it; members with a different SKU in the same product are **switched**; non-members who hold the target SKU have it **removed**; members already on the correct SKU are skipped (**no change**).
+
+---
+
+## Running the tests
+
+`Tests.gs` contains a suite of unit tests (pure-function, no network) and integration tests (live API calls).
+
+1. Open the Apps Script editor.
+2. In the **Functions** dropdown at the top, select `runAllTests`.
+3. Click **Run**.
+4. Open **Executions** (or press `Ctrl+Enter`) to see the log — each test prints `PASS` or `FAIL` with a reason.
+
+**Unit tests** (always runnable, no setup required):
+- `mergeObj_` edge cases
+- `substituteVariables_` — placeholder substitution and missing-key behaviour
+- `extractVariables_` — Directory profile → template variable mapping, primary org selection
+- `getLicenseProducts` — static catalog structure and completeness
+
+**Integration tests** (require valid Script Properties + API access):
+- `getConfig` — Script Properties present and well-formed
+- `getUsers` — returns users with expected fields; pagination token shape
+- `getUserProfile` — fetches name for first domain user
+- `getUserId` — resolves email → immutable ID
+- `getGroups` — returns array of groups with email field
+- `getGroupMembers` — error propagation for invalid group email
+- `getLicenseCount` — returns a non-negative number for first catalog SKU
+- `syncLicensesForGroup` (dry run) — change list has valid action values; `applied` is `false`
+
+Integration tests are skipped gracefully when optional resources (e.g. no groups in the domain) do not exist.
 
 ---
 

@@ -14,10 +14,13 @@
  */
 
 // ─── OAuth2 scopes ────────────────────────────────────────────────────────────
-
-/** Scope for listing users via the Admin Directory API. */
-const SCOPE_DIRECTORY_READ_ =
-  'https://www.googleapis.com/auth/admin.directory.user.readonly';
+//
+// These scopes are passed to getServiceAccountToken_() for APIs that require
+// DWD user impersonation or have no Apps Script advanced service.
+//
+// Admin Directory (users, groups, OUs) and Google Sheets are handled by the
+// AdminDirectory advanced service and SpreadsheetApp respectively — those
+// APIs no longer need service account tokens.
 
 /** Scope for reading and writing Gmail send-as settings (signatures). */
 const SCOPE_GMAIL_SETTINGS_ =
@@ -26,14 +29,6 @@ const SCOPE_GMAIL_SETTINGS_ =
 /** Scope for the Enterprise License Manager API. */
 const SCOPE_LICENSING_ =
   'https://www.googleapis.com/auth/apps.licensing';
-
-/** Scope for reading group membership from the Admin Directory API. */
-const SCOPE_DIRECTORY_GROUP_READ_ =
-  'https://www.googleapis.com/auth/admin.directory.group.readonly';
-
-/** Scope for reading and writing Google Sheets (used for sync logging). */
-const SCOPE_SHEETS_ =
-  'https://www.googleapis.com/auth/spreadsheets';
 
 // ─── Web app entry point ──────────────────────────────────────────────────────
 
@@ -108,47 +103,23 @@ function getAvailableVariables() {
  * @returns {{ users: Array<{primaryEmail:string, name:{fullName:string}, suspended:boolean, thumbnailPhotoUrl:string}>, nextPageToken: string|null }}
  */
 function getUsers(pageToken) {
-  const { adminEmail, domain } = getConfig();
-  const token = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
-
-  // Build query string manually for V8/Apps Script compatibility.
-  //
-  // Use customer=my_customer instead of domain= so that users from ALL domains
-  // in the Workspace account are returned (primary domain + any secondary /
-  // alias domains such as strataprimedemo.com alongside demo.strataprime.com).
-  // The domain= parameter restricts results to a single domain only.
-  let url =
-    'https://admin.googleapis.com/admin/directory/v1/users' +
-    '?customer=my_customer' +
-    '&maxResults=100' +
-    '&orderBy=email' +
-    // Request only the fields we need to minimise response size
-    '&fields=' + encodeURIComponent(
-      // isMailboxSetup = true only for accounts that have Gmail provisioned;
-      // we surface this in the sidebar so admins can filter non-Gmail accounts.
+  // Uses the AdminDirectory advanced service (runs as the deploying admin's
+  // credentials — no service account token needed for this admin-level call).
+  var params = {
+    customer:   'my_customer',
+    maxResults: 100,
+    orderBy:    'email',
+    // isMailboxSetup=true only for accounts with Gmail provisioned;
+    // we surface this in the sidebar so admins can filter non-Gmail accounts.
+    fields:
       'users(primaryEmail,name/fullName,thumbnailPhotoUrl,suspended,isMailboxSetup,orgUnitPath),' +
       'nextPageToken'
-    );
+  };
+  if (pageToken) params.pageToken = pageToken;
 
-  if (pageToken) {
-    url += '&pageToken=' + encodeURIComponent(pageToken);
-  }
-
-  const response = UrlFetchApp.fetch(url, {
-    headers: { Authorization: 'Bearer ' + token },
-    muteHttpExceptions: true
-  });
-
-  if (response.getResponseCode() !== 200) {
-    throw new Error(
-      'Directory API error (' + response.getResponseCode() + '): ' +
-      response.getContentText()
-    );
-  }
-
-  const data = JSON.parse(response.getContentText());
+  var data = AdminDirectory.Users.list(params);
   return {
-    users: data.users || [],
+    users:         data.users         || [],
     nextPageToken: data.nextPageToken || null
   };
 }
@@ -247,12 +218,6 @@ function updateUserSignature(userEmail, htmlTemplate) {
  * @returns {{ updated: number, failed: Array<{email:string, error:string}> }}
  */
 function updateAllUsersSignature(htmlTemplate) {
-  const { adminEmail } = getConfig();
-
-  // Obtain one directory token to reuse across all profile fetches;
-  // valid for 1 hour (sufficient for domains up to ~500 users).
-  const dirToken = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
-
   const results = { updated: 0, failed: [] };
   let pageToken  = null;
 
@@ -269,7 +234,7 @@ function updateAllUsersSignature(htmlTemplate) {
       if (user.suspended || user.isMailboxSetup === false) continue;
 
       try {
-        var profile  = getUserProfile_(user.primaryEmail, dirToken);
+        var profile  = getUserProfile_(user.primaryEmail);
         var vars     = extractVariables_(profile);
         var rendered = substituteVariables_(htmlTemplate, vars);
         updateSignatureForUser_(user.primaryEmail, rendered);
@@ -357,40 +322,15 @@ function getGmailToken_(userEmail) {
  * Fetches a user's full Directory profile, including name parts, phones, and
  * organization info needed for variable substitution.
  *
- * @param {string} userEmail   User's primary email address.
- * @param {string} [dirToken]  Pre-fetched directory token. When calling in a
- *                             loop, pass a cached token to avoid one token
- *                             request per user. Omit for one-off calls.
+ * Uses the AdminDirectory advanced service — no service account token needed.
+ *
+ * @param {string} userEmail  User's primary email address.
  * @returns {object} Raw user resource from the Directory API.
  */
-function getUserProfile_(userEmail, dirToken) {
-  var token = dirToken;
-  if (!token) {
-    var adminEmail = getConfig().adminEmail;
-    token = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
-  }
-
-  var url =
-    'https://admin.googleapis.com/admin/directory/v1/users/' +
-    encodeURIComponent(userEmail) +
-    '?fields=' + encodeURIComponent(
-      'primaryEmail,name(givenName,familyName,fullName),phones,organizations'
-    );
-
-  var response = UrlFetchApp.fetch(url, {
-    headers: { Authorization: 'Bearer ' + token },
-    muteHttpExceptions: true
+function getUserProfile_(userEmail) {
+  return AdminDirectory.Users.get(userEmail, {
+    fields: 'primaryEmail,name(givenName,familyName,fullName),phones,organizations'
   });
-
-  if (response.getResponseCode() !== 200) {
-    throw new Error(
-      'Could not fetch profile for ' + userEmail +
-      ' (' + response.getResponseCode() + '): ' +
-      response.getContentText()
-    );
-  }
-
-  return JSON.parse(response.getContentText());
 }
 
 /**
@@ -465,10 +405,6 @@ const SCOPE_GMAIL_DELEGATION_  =
 const SCOPE_CALENDAR_ =
   'https://www.googleapis.com/auth/calendar';
 
-/** Scope for reading organisational unit records from the Directory API. */
-const SCOPE_DIRECTORY_ORGUNIT_ =
-  'https://www.googleapis.com/auth/admin.directory.orgunit.readonly';
-
 /** Scope for reading policies via the Cloud Identity Policy API. */
 const SCOPE_CLOUD_IDENTITY_POLICIES_ =
   'https://www.googleapis.com/auth/cloud-identity.policies';
@@ -518,14 +454,12 @@ function getDataTransferApplications() {
  */
 function createDataTransfer(fromEmail, toEmail, appTransfers) {
   const { adminEmail } = getConfig();
-
-  // Obtain both tokens up front; each JWT exchange counts against quota.
-  const dirToken  = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_READ_]);
   const xferToken = getServiceAccountToken_(adminEmail, [SCOPE_DATATRANSFER_]);
 
   // Data Transfer API requires immutable user IDs, not email addresses.
-  const fromId = getUserId_(fromEmail, dirToken);
-  const toId   = getUserId_(toEmail,   dirToken);
+  // getUserId_ uses AdminDirectory advanced service — no token needed.
+  const fromId = getUserId_(fromEmail);
+  const toId   = getUserId_(toEmail);
 
   const payload = {
     oldOwnerUserId: fromId,
@@ -594,34 +528,13 @@ function getDataTransferStatus(transferId) {
  * Resolves a user's primary email to their immutable Directory user ID.
  * The Data Transfer API requires the immutable ID rather than an email address.
  *
- * @param {string} email     User's primary email address.
- * @param {string} dirToken  Pre-fetched Directory API token (optional).
+ * Uses the AdminDirectory advanced service — no service account token needed.
+ *
+ * @param {string} email  User's primary email address.
  * @returns {string} Immutable user ID.
  */
-function getUserId_(email, dirToken) {
-  var token = dirToken;
-  if (!token) {
-    token = getServiceAccountToken_(getConfig().adminEmail, [SCOPE_DIRECTORY_READ_]);
-  }
-
-  var response = UrlFetchApp.fetch(
-    'https://admin.googleapis.com/admin/directory/v1/users/' +
-    encodeURIComponent(email) + '?fields=id',
-    {
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
-    }
-  );
-
-  if (response.getResponseCode() !== 200) {
-    throw new Error(
-      'User not found: ' + email +
-      ' (' + response.getResponseCode() + '): ' +
-      response.getContentText()
-    );
-  }
-
-  return JSON.parse(response.getContentText()).id;
+function getUserId_(email) {
+  return AdminDirectory.Users.get(email, { fields: 'id' }).id;
 }
 
 // ─── Mail Delegation ──────────────────────────────────────────────────────────
@@ -765,10 +678,8 @@ function checkMailDelegationPolicy(orgUnitPath) {
   const allPolicies = JSON.parse(policyResp.getContentText()).policies || [];
   if (!allPolicies.length) return { allowed: null, note: null };
 
-  // Step 2 — resolve each policy's OU resource name ("orgUnits/<id>") to its path.
-  // The Policy API returns only the OU ID; we look up the path via Directory API
-  // using the "id:" prefix (same as GAM's /orgunits/id:<id> calls).
-  const dirToken = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_ORGUNIT_]);
+  // Step 2 — resolve each policy's OU resource name ("orgUnits/<id>") to its path
+  // using the AdminDirectory advanced service (no service account token needed).
   const ouPathMap = {}; // "orgUnits/<id>" → "/Some/OU/Path"
 
   for (var i = 0; i < allPolicies.length; i++) {
@@ -777,14 +688,8 @@ function checkMailDelegationPolicy(orgUnitPath) {
 
     var ouId = ouResource.replace(/^orgUnits\//, '');
     try {
-      var ouResp = UrlFetchApp.fetch(
-        'https://admin.googleapis.com/admin/directory/v1/customer/my_customer/orgunits/id:' +
-        ouId + '?fields=orgUnitPath',
-        { headers: { Authorization: 'Bearer ' + dirToken }, muteHttpExceptions: true }
-      );
-      ouPathMap[ouResource] = ouResp.getResponseCode() === 200
-        ? (JSON.parse(ouResp.getContentText()).orgUnitPath || '/')
-        : '/';
+      var ou = AdminDirectory.Orgunits.get('my_customer', 'id:' + ouId, { fields: 'orgUnitPath' });
+      ouPathMap[ouResource] = ou.orgUnitPath || '/';
     } catch (e) {
       ouPathMap[ouResource] = '/';
     }
@@ -1254,28 +1159,20 @@ function unassignLicense(userEmail, productId, skuId) {
  * @returns {{ groups: Array<{email: string, name: string}> }}
  */
 function getGroups() {
-  const { adminEmail } = getConfig();
-  const token = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_GROUP_READ_]);
-
   var groups    = [];
   var pageToken = null;
 
   do {
-    var url =
-      'https://admin.googleapis.com/admin/directory/v1/groups' +
-      '?customer=my_customer&maxResults=200' +
-      '&orderBy=email&fields=groups(email,name),nextPageToken';
-    if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+    var params = {
+      customer:   'my_customer',
+      maxResults: 200,
+      orderBy:    'email',
+      fields:     'groups(email,name),nextPageToken'
+    };
+    if (pageToken) params.pageToken = pageToken;
 
-    var resp = UrlFetchApp.fetch(url, {
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
-    });
-
-    if (resp.getResponseCode() !== 200) break;
-
-    var data = JSON.parse(resp.getContentText());
-    groups = groups.concat(data.groups || []);
+    var data  = AdminDirectory.Groups.list(params);
+    groups    = groups.concat(data.groups || []);
     pageToken = data.nextPageToken || null;
   } while (pageToken && groups.length < 1000);
 
@@ -1290,28 +1187,18 @@ function getGroups() {
  * @returns {{ members: string[] }}
  */
 function getGroupMembers(groupEmail) {
-  const { adminEmail } = getConfig();
-  const token = getServiceAccountToken_(adminEmail, [SCOPE_DIRECTORY_GROUP_READ_]);
-
   var members   = [];
   var pageToken = null;
 
   do {
-    var url =
-      'https://admin.googleapis.com/admin/directory/v1/groups/' +
-      encodeURIComponent(groupEmail) +
-      '/members?maxResults=200&includeDerivedMembership=true' +
-      '&fields=members(email,type,status),nextPageToken';
-    if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+    var params = {
+      maxResults:               200,
+      includeDerivedMembership: true,
+      fields:                   'members(email,type,status),nextPageToken'
+    };
+    if (pageToken) params.pageToken = pageToken;
 
-    var resp = UrlFetchApp.fetch(url, {
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
-    });
-
-    if (resp.getResponseCode() !== 200) break;
-
-    var data = JSON.parse(resp.getContentText());
+    var data = AdminDirectory.Members.list(groupEmail, params);
     (data.members || []).forEach(function(m) {
       if (m.type === 'USER' && m.status === 'ACTIVE') {
         members.push(m.email.toLowerCase());
@@ -1410,55 +1297,50 @@ function syncLicensesForGroup(groupEmail, productId, skuId, dryRun) {
  * @returns {{ spreadsheetId: string, spreadsheetUrl: string }}
  */
 function writeSyncLog(groupEmail, productId, skuId, changes, sheetId) {
-  const { adminEmail } = getConfig();
-  const token = getServiceAccountToken_(adminEmail, [SCOPE_SHEETS_]);
+  // Uses SpreadsheetApp (built-in service) — no service account token needed.
+  var sheetTab = 'License Sync';
+  var ss;
 
-  var spreadsheetId = sheetId || null;
-  var sheetTab      = 'License Sync';
-
-  if (!spreadsheetId) {
-    var createResp = UrlFetchApp.fetch('https://sheets.googleapis.com/v4/spreadsheets', {
-      method: 'POST',
-      headers: {
-        Authorization:  'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
-      payload: JSON.stringify({
-        properties: { title: 'License Sync Log – ' + new Date().toISOString().slice(0, 10) },
-        sheets:     [{ properties: { title: sheetTab } }]
-      }),
-      muteHttpExceptions: true
-    });
-
-    if (createResp.getResponseCode() !== 200) {
-      throw new Error('Could not create spreadsheet: ' + createResp.getContentText());
-    }
-
-    spreadsheetId = JSON.parse(createResp.getContentText()).spreadsheetId;
-
-    appendSheetRows_(spreadsheetId, sheetTab, [[
+  if (sheetId) {
+    ss = SpreadsheetApp.openById(sheetId);
+  } else {
+    // Create a new spreadsheet in the deploying admin's Drive.
+    ss = SpreadsheetApp.create(
+      'License Sync Log \u2013 ' + new Date().toISOString().slice(0, 10)
+    );
+    var defaultSheet = ss.getSheets()[0];
+    defaultSheet.setName(sheetTab);
+    defaultSheet.appendRow([
       'Timestamp', 'Group', 'Product ID', 'SKU ID',
       'User Email', 'Action', 'From SKU', 'To SKU', 'Status', 'Error'
-    ]], token);
+    ]);
   }
 
-  var ts   = new Date().toISOString();
-  var rows = changes
+  var sheet = ss.getSheetByName(sheetTab);
+  if (!sheet) {
+    // Tab doesn't exist yet in an existing spreadsheet — create it with header.
+    sheet = ss.insertSheet(sheetTab);
+    sheet.appendRow([
+      'Timestamp', 'Group', 'Product ID', 'SKU ID',
+      'User Email', 'Action', 'From SKU', 'To SKU', 'Status', 'Error'
+    ]);
+  }
+
+  var ts = new Date().toISOString();
+  changes
     .filter(function(c) { return c.action !== 'NO_CHANGE'; })
-    .map(function(c) {
-      return [
+    .forEach(function(c) {
+      sheet.appendRow([
         ts, groupEmail, productId, skuId,
         c.email, c.action,
         c.fromSku || '', c.toSku || '',
         c.status  || 'dry_run', c.error || ''
-      ];
+      ]);
     });
 
-  if (rows.length > 0) appendSheetRows_(spreadsheetId, sheetTab, rows, token);
-
   return {
-    spreadsheetId:  spreadsheetId,
-    spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/' + spreadsheetId
+    spreadsheetId: ss.getId(),
+    url:           ss.getUrl()
   };
 }
 
@@ -1496,32 +1378,6 @@ function getLicensedUsersForProduct_(productId, token) {
   } while (pageToken);
 
   return result;
-}
-
-/**
- * Appends rows to a named sheet tab.
- *
- * @param {string} spreadsheetId
- * @param {string} sheetName
- * @param {Array}  rows         Array of arrays (each inner array = one row).
- * @param {string} token
- */
-function appendSheetRows_(spreadsheetId, sheetName, rows, token) {
-  UrlFetchApp.fetch(
-    'https://sheets.googleapis.com/v4/spreadsheets/' +
-    encodeURIComponent(spreadsheetId) +
-    '/values/' + encodeURIComponent(sheetName + '!A1') +
-    ':append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-    {
-      method: 'POST',
-      headers: {
-        Authorization:  'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
-      payload: JSON.stringify({ values: rows }),
-      muteHttpExceptions: true
-    }
-  );
 }
 
 /**
