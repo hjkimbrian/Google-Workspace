@@ -518,6 +518,47 @@
       font-weight: 600;
       box-shadow: 0 1px 3px rgba(0,0,0,0.13);
     }
+
+    /* ── Licenses page ───────────────────────────────────────────── */
+    #page-licenses {
+      display: none;
+      flex-grow: 1;
+      overflow-y: auto;
+      background: #f0f2f5;
+      padding: 28px 24px;
+    }
+
+    .lic-card {
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 12px;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 28px 32px;
+    }
+
+    .lic-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f2f5;
+    }
+
+    .lic-row:last-child { border-bottom: none; }
+
+    .lic-action-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+
+    .lic-action-assign  { background: #d4edda; color: #155724; }
+    .lic-action-switch  { background: #cce5ff; color: #004085; }
+    .lic-action-remove  { background: #f8d7da; color: #721c24; }
+    .lic-action-nochange { background: #e2e3e5; color: #383d41; }
   </style>
 </head>
 
@@ -548,6 +589,11 @@
       <li class="nav-item">
         <button class="nav-link" data-page="delegation" id="tab-delegation">
           <i class="bi bi-people me-1"></i>Delegation
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" data-page="licenses" id="tab-licenses">
+          <i class="bi bi-key me-1"></i>Licenses
         </button>
       </li>
     </ul>
@@ -1099,6 +1145,165 @@
     </div><!-- /.del-card -->
   </div><!-- /#page-delegation -->
 
+  <!-- ── License Management page ──────────────────────────────────────────── -->
+  <div id="page-licenses">
+    <div class="lic-card shadow-sm">
+
+      <!-- Header -->
+      <div class="mb-4">
+        <h5 class="fw-bold mb-1">
+          <i class="bi bi-key text-primary me-2"></i>License Management
+        </h5>
+        <p class="text-muted small mb-0">
+          View, assign, switch, or remove Google Workspace licenses for individual users
+          or synchronise licenses based on group membership.
+        </p>
+      </div>
+
+      <!-- ── Product / SKU selector ──────────────────────────────────────── -->
+      <div class="mb-4">
+        <p class="text-muted text-uppercase fw-semibold mb-2"
+           style="font-size:0.72rem;letter-spacing:0.06em">Product &amp; SKU</p>
+        <div class="row g-2">
+          <div class="col-sm-6">
+            <label class="form-label small fw-semibold" for="lic-product">Product</label>
+            <select id="lic-product" class="form-select form-select-sm">
+              <option value="">— select a product —</option>
+            </select>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label small fw-semibold" for="lic-sku">SKU</label>
+            <select id="lic-sku" class="form-select form-select-sm" disabled>
+              <option value="">— select a SKU —</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Inventory count -->
+        <div id="lic-count-wrap" class="mt-2" style="display:none">
+          <span class="text-muted small">
+            <i class="bi bi-people me-1"></i>
+            Licenses assigned:
+            <strong id="lic-count-value">–</strong>
+            <span id="lic-count-spinner" class="ms-1" style="display:none">
+              <span class="spinner-border spinner-border-sm"></span>
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <!-- ── User license section ────────────────────────────────────────── -->
+      <div class="mb-5">
+        <p class="text-muted text-uppercase fw-semibold mb-2"
+           style="font-size:0.72rem;letter-spacing:0.06em">
+          <i class="bi bi-person me-1"></i>User Licenses
+        </p>
+
+        <!-- User picker -->
+        <div class="d-flex gap-2 align-items-start mb-3">
+          <div class="flex-grow-1">
+            <input type="text" id="lic-user" class="form-control form-control-sm"
+                   list="lic-user-list" placeholder="Type email or name…" autocomplete="off" />
+            <datalist id="lic-user-list"></datalist>
+          </div>
+          <button id="btn-lic-load-user" class="btn btn-sm btn-primary" type="button">
+            <i class="bi bi-search me-1"></i>Load
+          </button>
+        </div>
+
+        <!-- Loading -->
+        <div id="lic-user-loading" style="display:none" class="text-muted small mb-2">
+          <span class="spinner-border spinner-border-sm me-1"></span>Loading licenses…
+        </div>
+
+        <!-- User license list -->
+        <div id="lic-user-licenses" style="display:none">
+          <div id="lic-user-license-list" class="mb-3"></div>
+
+          <!-- Assign / switch to selected SKU -->
+          <div class="xfer-opts-panel">
+            <p class="small fw-semibold mb-2">Assign selected SKU to this user</p>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+              <button id="btn-lic-assign" class="btn btn-sm btn-outline-success" type="button" disabled>
+                <i class="bi bi-plus-circle me-1"></i>Assign
+              </button>
+              <button id="btn-lic-switch" class="btn btn-sm btn-outline-primary" type="button" disabled>
+                <i class="bi bi-arrow-repeat me-1"></i>Switch to this SKU
+              </button>
+              <span id="lic-user-action-spinner" style="display:none" class="text-muted small">
+                <span class="spinner-border spinner-border-sm me-1"></span>Working…
+              </span>
+            </div>
+            <p class="text-muted small mt-2 mb-0">
+              "Assign" adds this license to the user. "Switch" replaces their
+              existing license in the same product with the selected SKU.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Group sync section ──────────────────────────────────────────── -->
+      <div>
+        <p class="text-muted text-uppercase fw-semibold mb-2"
+           style="font-size:0.72rem;letter-spacing:0.06em">
+          <i class="bi bi-diagram-3 me-1"></i>Group License Sync
+        </p>
+        <p class="text-muted small mb-3">
+          Synchronise license assignments so that every member of a group holds the
+          selected SKU — and no former members do. Requires a product and SKU selected above.
+        </p>
+
+        <!-- Group picker -->
+        <div class="row g-2 mb-3">
+          <div class="col-sm-8">
+            <label class="form-label small fw-semibold" for="lic-group">Group</label>
+            <select id="lic-group" class="form-select form-select-sm">
+              <option value="">— loading groups… —</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Log options -->
+        <div class="xfer-opts-panel mb-3">
+          <p class="small fw-semibold mb-2">
+            <i class="bi bi-file-earmark-spreadsheet me-1 text-success"></i>Log sync results to Google Sheet
+          </p>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" id="lic-log-enabled" />
+            <label class="form-check-label small" for="lic-log-enabled">
+              Write sync log to a Google Sheet
+            </label>
+          </div>
+          <div id="lic-log-options" style="display:none">
+            <div class="row g-2">
+              <div class="col">
+                <label class="form-label small mb-1" for="lic-sheet-url">
+                  Sheet URL <span class="text-muted">(leave blank to create new)</span>
+                </label>
+                <input type="url" id="lic-sheet-url" class="form-control form-control-sm"
+                       placeholder="https://docs.google.com/spreadsheets/d/…" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <button id="btn-lic-dry-run" class="btn btn-sm btn-outline-secondary" type="button" disabled>
+            <i class="bi bi-eye me-1"></i>Dry Run (preview changes)
+          </button>
+          <button id="btn-lic-sync" class="btn btn-sm btn-primary" type="button" disabled>
+            <i class="bi bi-arrow-repeat me-1"></i>Sync Now
+          </button>
+          <span id="lic-sync-spinner" style="display:none" class="text-muted small">
+            <span class="spinner-border spinner-border-sm me-1"></span>Running sync…
+          </span>
+        </div>
+      </div>
+
+    </div><!-- /.lic-card -->
+  </div><!-- /#page-licenses -->
+
 </div><!-- /#app-shell -->
 
 <!-- ── Insert Image modal ─────────────────────────────────────────────────── -->
@@ -1165,6 +1370,77 @@
         </button>
         <button id="img-insert-btn" type="button" class="btn btn-primary btn-sm">
           <i class="bi bi-image me-1"></i>Insert Image
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── License dry-run preview modal ─────────────────────────────────────── -->
+<div class="modal fade" id="lic-dryrun-modal" tabindex="-1"
+     aria-labelledby="lic-dryrun-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header border-0 pb-1">
+        <div>
+          <h5 class="modal-title mb-0" id="lic-dryrun-modal-label">
+            <i class="bi bi-eye text-primary me-2"></i>Dry Run — License Sync Preview
+          </h5>
+          <div id="lic-dryrun-subtitle" class="text-muted small"></div>
+        </div>
+        <button type="button" class="btn-close ms-3" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Summary badges -->
+        <div id="lic-dryrun-summary" class="d-flex gap-2 flex-wrap mb-3"></div>
+        <!-- Changes table -->
+        <div id="lic-dryrun-loading" class="text-center py-4 text-muted">
+          <div class="spinner-border spinner-border-sm me-2"></div>Computing changes…
+        </div>
+        <div id="lic-dryrun-table-wrap" style="display:none">
+          <table class="table table-sm table-bordered mb-0" style="font-size:0.82rem">
+            <thead class="table-light">
+              <tr>
+                <th>User</th>
+                <th style="width:110px">Action</th>
+                <th>Current license</th>
+                <th>After sync</th>
+              </tr>
+            </thead>
+            <tbody id="lic-dryrun-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-1">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-lic-apply-from-dryrun" disabled>
+          <i class="bi bi-check2 me-1"></i>Apply Changes
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── License sync confirmation modal ───────────────────────────────────── -->
+<div class="modal fade" id="lic-confirm-modal" tabindex="-1"
+     aria-labelledby="lic-confirm-modal-label" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title" id="lic-confirm-modal-label">
+          <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Confirm License Sync
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="lic-confirm-body">This will modify license assignments for group members.</p>
+        <p class="text-muted small mb-0">This action uses the Enterprise License Manager API
+           and may trigger auto-provisioning side-effects in your domain.</p>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-lic-confirm-apply">
+          <i class="bi bi-check2 me-1"></i>Apply Now
         </button>
       </div>
     </div>
@@ -1504,6 +1780,7 @@ function loadUsers() {
       // Keep per-page user datalists in sync as pages load
       if (xferState.initialized) populateXferUserLists();
       if (delState.initialized)  populateDelUserLists();
+      if (licState.initialized)  populateLicUserLists();
 
       // Show / hide "Load more" based on whether more pages exist
       const wrap = document.getElementById('load-more-wrap');
@@ -1999,6 +2276,8 @@ function showPage(page) {
     page === 'transfers'  ? 'block' : 'none';
   document.getElementById('page-delegation').style.display =
     page === 'delegation' ? 'block' : 'none';
+  document.getElementById('page-licenses').style.display =
+    page === 'licenses'   ? 'block' : 'none';
 
   document.querySelectorAll('#page-nav .nav-link').forEach(function(tab) {
     tab.classList.toggle('active', tab.dataset.page === page);
@@ -2011,6 +2290,7 @@ document.querySelectorAll('#page-nav .nav-link').forEach(function(tab) {
     showPage(page);
     if (page === 'transfers' && !xferState.initialized) initTransferPage();
     if (page === 'delegation' && !delState.initialized) initDelegationPage();
+    if (page === 'licenses'   && !licState.initialized) initLicensePage();
   });
 });
 
@@ -2888,6 +3168,544 @@ function doRemoveCalendarAcl(btn) {
       showToast('Failed to remove calendar sharing: ' + err.message, 'danger');
     })
     .removeCalendarAcl(email, ruleId);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  License Management page
+// ════════════════════════════════════════════════════════════════════════════
+
+var licState = {
+  initialized:    false,
+  products:       [],   // Array of { productId, productName, skus: [{skuId, skuName}] }
+  userLicenses:   [],   // Licenses for the currently loaded user
+  dryRunChanges:  null, // Last dry-run result — used when "Apply" is clicked from modal
+  pendingSyncArgs: null // Args queued for the confirm-then-apply flow
+};
+
+var licDryrunModal;
+var licConfirmModal;
+
+/**
+ * Called once when the Licenses tab is first activated.
+ * Loads the static product catalog and the domain group list.
+ */
+function initLicensePage() {
+  licState.initialized = true;
+  licDryrunModal  = new bootstrap.Modal(document.getElementById('lic-dryrun-modal'));
+  licConfirmModal = new bootstrap.Modal(document.getElementById('lic-confirm-modal'));
+
+  populateLicUserLists();
+
+  // Build product dropdown from static catalog returned by server
+  google.script.run
+    .withSuccessHandler(function(products) {
+      licState.products = products;
+      renderProductDropdown(products);
+    })
+    .withFailureHandler(function(err) {
+      showToast('Failed to load license products: ' + err.message, 'danger');
+    })
+    .getLicenseProducts();
+
+  // Load groups for sync section
+  loadGroupList();
+
+  // Wire up log-enable checkbox toggle
+  document.getElementById('lic-log-enabled').addEventListener('change', function() {
+    document.getElementById('lic-log-options').style.display = this.checked ? '' : 'none';
+  });
+
+  // Wire up product/SKU dropdowns
+  document.getElementById('lic-product').addEventListener('change', onLicProductChange);
+  document.getElementById('lic-sku').addEventListener('change', function() {
+    var productId = document.getElementById('lic-product').value;
+    var skuId     = document.getElementById('lic-sku').value;
+    var hasSku    = !!(productId && skuId);
+    document.getElementById('lic-count-wrap').style.display = hasSku ? '' : 'none';
+    document.getElementById('btn-lic-dry-run').disabled = !hasSku;
+    document.getElementById('btn-lic-sync').disabled    = !hasSku;
+    document.getElementById('btn-lic-assign').disabled  = !hasSku;
+    document.getElementById('btn-lic-switch').disabled  = !hasSku;
+    if (hasSku) loadLicenseCount(productId, skuId);
+  });
+
+  // Wire up user load button
+  document.getElementById('btn-lic-load-user').addEventListener('click', function() {
+    var email = document.getElementById('lic-user').value.trim();
+    if (!email) { showToast('Enter a user email.', 'warning'); return; }
+    loadUserLicenses(email);
+  });
+
+  // Wire up Enter key in user input
+  document.getElementById('lic-user').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('btn-lic-load-user').click();
+  });
+
+  // Assign button
+  document.getElementById('btn-lic-assign').addEventListener('click', function() {
+    var email     = document.getElementById('lic-user').value.trim();
+    var productId = document.getElementById('lic-product').value;
+    var skuId     = document.getElementById('lic-sku').value;
+    if (!email || !productId || !skuId) return;
+    doAssignLicense(email, productId, skuId);
+  });
+
+  // Switch button
+  document.getElementById('btn-lic-switch').addEventListener('click', function() {
+    var email     = document.getElementById('lic-user').value.trim();
+    var productId = document.getElementById('lic-product').value;
+    var skuId     = document.getElementById('lic-sku').value;
+    if (!email || !productId || !skuId) return;
+    doSwitchLicense(email, productId, skuId);
+  });
+
+  // Dry run button
+  document.getElementById('btn-lic-dry-run').addEventListener('click', doDryRunSync);
+
+  // Sync now button
+  document.getElementById('btn-lic-sync').addEventListener('click', function() {
+    var productId = document.getElementById('lic-product').value;
+    var skuId     = document.getElementById('lic-sku').value;
+    var groupEmail = document.getElementById('lic-group').value;
+    if (!productId || !skuId || !groupEmail) {
+      showToast('Select a product, SKU, and group first.', 'warning');
+      return;
+    }
+    var skuName   = document.getElementById('lic-sku').options[
+      document.getElementById('lic-sku').selectedIndex].text;
+    var groupName = document.getElementById('lic-group').options[
+      document.getElementById('lic-group').selectedIndex].text;
+    document.getElementById('lic-confirm-body').innerHTML =
+      'Sync <strong>' + escapeHtml(skuName) + '</strong> licenses for all members of ' +
+      '<strong>' + escapeHtml(groupName) + '</strong>.<br>' +
+      '<span class="text-muted small">Members without the license will be assigned it; ' +
+      'non-members with the license will have it removed.</span>';
+    licState.pendingSyncArgs = { groupEmail: groupEmail, productId: productId, skuId: skuId };
+    licConfirmModal.show();
+  });
+
+  // Confirm-apply button inside confirm modal
+  document.getElementById('btn-lic-confirm-apply').addEventListener('click', function() {
+    licConfirmModal.hide();
+    if (licState.pendingSyncArgs) {
+      var a = licState.pendingSyncArgs;
+      doApplySync(a.groupEmail, a.productId, a.skuId, false);
+      licState.pendingSyncArgs = null;
+    }
+  });
+
+  // Apply from dry-run modal
+  document.getElementById('btn-lic-apply-from-dryrun').addEventListener('click', function() {
+    licDryrunModal.hide();
+    if (licState.dryRunChanges && licState.pendingSyncArgs) {
+      var a = licState.pendingSyncArgs;
+      doApplySync(a.groupEmail, a.productId, a.skuId, false);
+    }
+  });
+}
+
+/** Fills the user datalist for the Licenses tab. */
+function populateLicUserLists() {
+  var opts = state.allUsers.map(function(u) {
+    var label = (u.name && u.name.fullName)
+      ? u.name.fullName + ' <' + u.primaryEmail + '>'
+      : u.primaryEmail;
+    return '<option value="' + escapeHtml(u.primaryEmail) + '">' +
+           escapeHtml(label) + '</option>';
+  }).join('');
+  document.getElementById('lic-user-list').innerHTML = opts;
+}
+
+/** Renders the product <select> from the catalog returned by getLicenseProducts(). */
+function renderProductDropdown(products) {
+  var sel = document.getElementById('lic-product');
+  sel.innerHTML = '<option value="">— select a product —</option>' +
+    products.map(function(p) {
+      return '<option value="' + escapeHtml(p.productId) + '">' +
+             escapeHtml(p.productName) + '</option>';
+    }).join('');
+}
+
+/** Populates the SKU dropdown when a product is selected. */
+function onLicProductChange() {
+  var productId = document.getElementById('lic-product').value;
+  var skuSel    = document.getElementById('lic-sku');
+
+  skuSel.innerHTML = '<option value="">— select a SKU —</option>';
+  skuSel.disabled  = true;
+  document.getElementById('lic-count-wrap').style.display = 'none';
+  document.getElementById('btn-lic-dry-run').disabled = true;
+  document.getElementById('btn-lic-sync').disabled    = true;
+  document.getElementById('btn-lic-assign').disabled  = true;
+  document.getElementById('btn-lic-switch').disabled  = true;
+
+  if (!productId) return;
+
+  var product = licState.products.find(function(p) { return p.productId === productId; });
+  if (!product) return;
+
+  skuSel.innerHTML = '<option value="">— select a SKU —</option>' +
+    product.skus.map(function(s) {
+      return '<option value="' + escapeHtml(s.skuId) + '">' +
+             escapeHtml(s.skuName) + '</option>';
+    }).join('');
+  skuSel.disabled = false;
+}
+
+/** Fetches and displays the count of users assigned a specific SKU. */
+function loadLicenseCount(productId, skuId) {
+  var countEl   = document.getElementById('lic-count-value');
+  var spinnerEl = document.getElementById('lic-count-spinner');
+  countEl.textContent  = '–';
+  spinnerEl.style.display = '';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      spinnerEl.style.display = 'none';
+      countEl.textContent = result.count;
+    })
+    .withFailureHandler(function(err) {
+      spinnerEl.style.display = 'none';
+      countEl.textContent = 'Error';
+      showToast('Failed to load license count: ' + err.message, 'danger');
+    })
+    .getLicenseCount(productId, skuId);
+}
+
+/** Loads all licenses for a given user and renders them. */
+function loadUserLicenses(email) {
+  document.getElementById('lic-user-loading').style.display = '';
+  document.getElementById('lic-user-licenses').style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(licenses) {
+      licState.userLicenses = licenses || [];
+      document.getElementById('lic-user-loading').style.display = 'none';
+      renderUserLicenses(licenses, email);
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('lic-user-loading').style.display = 'none';
+      showToast('Failed to load user licenses: ' + err.message, 'danger');
+    })
+    .getUserLicenses(email);
+}
+
+/**
+ * Renders the license list for a user.
+ *
+ * @param {Array<{productId, productName, skuId, skuName}>} licenses
+ * @param {string} email
+ */
+function renderUserLicenses(licenses, email) {
+  var wrap = document.getElementById('lic-user-licenses');
+  var list = document.getElementById('lic-user-license-list');
+
+  if (!licenses || licenses.length === 0) {
+    list.innerHTML =
+      '<div class="text-muted small mb-2">' +
+      '<i class="bi bi-key me-1"></i>No licenses assigned to ' + escapeHtml(email) + '.</div>';
+  } else {
+    list.innerHTML = licenses.map(function(lic) {
+      return (
+        '<div class="lic-row">' +
+          '<i class="bi bi-key-fill text-primary"></i>' +
+          '<div class="flex-grow-1 small">' +
+            '<span class="fw-semibold">' + escapeHtml(lic.skuName || lic.skuId) + '</span>' +
+            '<span class="text-muted ms-2">' + escapeHtml(lic.productName || lic.productId) + '</span>' +
+          '</div>' +
+          '<button class="btn btn-link btn-sm text-danger p-0" type="button" ' +
+                  'data-product="' + escapeHtml(lic.productId) + '" ' +
+                  'data-sku="' + escapeHtml(lic.skuId) + '" ' +
+                  'data-email="' + escapeHtml(email) + '" ' +
+                  'title="Remove this license" onclick="doRemoveLicense(this)">' +
+            '<i class="bi bi-trash3"></i>' +
+          '</button>' +
+        '</div>'
+      );
+    }).join('');
+  }
+
+  wrap.style.display = '';
+}
+
+/** Assigns the selected license to the user. */
+function doAssignLicense(email, productId, skuId) {
+  var spinner = document.getElementById('lic-user-action-spinner');
+  document.getElementById('btn-lic-assign').disabled = true;
+  document.getElementById('btn-lic-switch').disabled = true;
+  spinner.style.display = '';
+
+  google.script.run
+    .withSuccessHandler(function() {
+      spinner.style.display = 'none';
+      document.getElementById('btn-lic-assign').disabled = false;
+      document.getElementById('btn-lic-switch').disabled = false;
+      showToast('License assigned successfully.', 'success');
+      loadUserLicenses(email);
+      loadLicenseCount(productId, skuId);
+    })
+    .withFailureHandler(function(err) {
+      spinner.style.display = 'none';
+      document.getElementById('btn-lic-assign').disabled = false;
+      document.getElementById('btn-lic-switch').disabled = false;
+      showToast('Failed to assign license: ' + err.message, 'danger');
+    })
+    .assignLicense(email, productId, skuId);
+}
+
+/** Switches the user to the selected SKU (replaces their existing SKU in the same product). */
+function doSwitchLicense(email, productId, newSkuId) {
+  // Find the user's current SKU for this product
+  var existing = licState.userLicenses.filter(function(l) {
+    return l.productId === productId && l.skuId !== newSkuId;
+  });
+  if (existing.length === 0) {
+    showToast('No existing license found in this product to switch from. Use Assign instead.', 'warning');
+    return;
+  }
+  var oldSkuId = existing[0].skuId;
+
+  var spinner = document.getElementById('lic-user-action-spinner');
+  document.getElementById('btn-lic-assign').disabled = true;
+  document.getElementById('btn-lic-switch').disabled = true;
+  spinner.style.display = '';
+
+  google.script.run
+    .withSuccessHandler(function() {
+      spinner.style.display = 'none';
+      document.getElementById('btn-lic-assign').disabled = false;
+      document.getElementById('btn-lic-switch').disabled = false;
+      showToast('License switched successfully.', 'success');
+      loadUserLicenses(email);
+      loadLicenseCount(productId, newSkuId);
+    })
+    .withFailureHandler(function(err) {
+      spinner.style.display = 'none';
+      document.getElementById('btn-lic-assign').disabled = false;
+      document.getElementById('btn-lic-switch').disabled = false;
+      showToast('Failed to switch license: ' + err.message, 'danger');
+    })
+    .switchLicense(email, productId, oldSkuId, newSkuId);
+}
+
+/**
+ * Removes a specific license from a user. Called via inline onclick.
+ *
+ * @param {HTMLElement} btn  Button element with data-email, data-product, data-sku.
+ */
+function doRemoveLicense(btn) {
+  var email     = btn.dataset.email;
+  var productId = btn.dataset.product;
+  var skuId     = btn.dataset.sku;
+  if (!email || !productId || !skuId) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  google.script.run
+    .withSuccessHandler(function() {
+      showToast('License removed.', 'success');
+      loadUserLicenses(email);
+      var curProduct = document.getElementById('lic-product').value;
+      var curSku     = document.getElementById('lic-sku').value;
+      if (curProduct === productId && curSku === skuId) loadLicenseCount(productId, skuId);
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-trash3"></i>';
+      showToast('Failed to remove license: ' + err.message, 'danger');
+    })
+    .unassignLicense(email, productId, skuId);
+}
+
+/** Loads the domain group list into the group <select>. */
+function loadGroupList() {
+  google.script.run
+    .withSuccessHandler(function(groups) {
+      var sel = document.getElementById('lic-group');
+      if (!groups || groups.length === 0) {
+        sel.innerHTML = '<option value="">— no groups found —</option>';
+        return;
+      }
+      sel.innerHTML = '<option value="">— select a group —</option>' +
+        groups.map(function(g) {
+          return '<option value="' + escapeHtml(g.email) + '">' +
+                 escapeHtml(g.name || g.email) + ' (' + escapeHtml(g.email) + ')</option>';
+        }).join('');
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('lic-group').innerHTML =
+        '<option value="">— failed to load groups —</option>';
+      showToast('Failed to load groups: ' + err.message, 'danger');
+    })
+    .getGroups();
+}
+
+/** Runs a dry-run sync and shows the preview modal. */
+function doDryRunSync() {
+  var productId  = document.getElementById('lic-product').value;
+  var skuId      = document.getElementById('lic-sku').value;
+  var groupEmail = document.getElementById('lic-group').value;
+
+  if (!productId || !skuId || !groupEmail) {
+    showToast('Select a product, SKU, and group first.', 'warning');
+    return;
+  }
+
+  var skuName   = document.getElementById('lic-sku').options[
+    document.getElementById('lic-sku').selectedIndex].text;
+  var groupName = document.getElementById('lic-group').options[
+    document.getElementById('lic-group').selectedIndex].text;
+
+  document.getElementById('lic-dryrun-subtitle').textContent =
+    'Group: ' + groupName + '  •  SKU: ' + skuName;
+  document.getElementById('lic-dryrun-loading').style.display = '';
+  document.getElementById('lic-dryrun-table-wrap').style.display = 'none';
+  document.getElementById('lic-dryrun-summary').innerHTML = '';
+  document.getElementById('btn-lic-apply-from-dryrun').disabled = true;
+
+  licState.dryRunChanges  = null;
+  licState.pendingSyncArgs = { groupEmail: groupEmail, productId: productId, skuId: skuId };
+
+  licDryrunModal.show();
+
+  google.script.run
+    .withSuccessHandler(function(changes) {
+      licState.dryRunChanges = changes;
+      renderDryRunPreview(changes);
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('lic-dryrun-loading').style.display = 'none';
+      document.getElementById('lic-dryrun-table-wrap').innerHTML =
+        '<div class="text-danger small p-2"><i class="bi bi-exclamation-triangle me-1"></i>' +
+        escapeHtml(err.message) + '</div>';
+      document.getElementById('lic-dryrun-table-wrap').style.display = '';
+    })
+    .syncLicensesForGroup(groupEmail, productId, skuId, true);
+}
+
+/**
+ * Renders the dry-run preview table inside the modal.
+ *
+ * @param {Array<{userEmail, action, fromSku, fromSkuName, toSku, toSkuName}>} changes
+ */
+function renderDryRunPreview(changes) {
+  document.getElementById('lic-dryrun-loading').style.display = 'none';
+
+  // Summary badges
+  var counts = { ASSIGN: 0, SWITCH: 0, REMOVE: 0, NO_CHANGE: 0 };
+  changes.forEach(function(c) { counts[c.action] = (counts[c.action] || 0) + 1; });
+
+  var summaryHtml = '';
+  if (counts.ASSIGN)    summaryHtml += '<span class="badge lic-action-badge lic-action-assign">+' + counts.ASSIGN + ' Assign</span> ';
+  if (counts.SWITCH)    summaryHtml += '<span class="badge lic-action-badge lic-action-switch">~' + counts.SWITCH + ' Switch</span> ';
+  if (counts.REMOVE)    summaryHtml += '<span class="badge lic-action-badge lic-action-remove">-' + counts.REMOVE + ' Remove</span> ';
+  if (counts.NO_CHANGE) summaryHtml += '<span class="badge lic-action-badge lic-action-nochange">=' + counts.NO_CHANGE + ' No change</span> ';
+  document.getElementById('lic-dryrun-summary').innerHTML = summaryHtml;
+
+  // Table rows
+  var actionClasses = {
+    ASSIGN:    'lic-action-assign',
+    SWITCH:    'lic-action-switch',
+    REMOVE:    'lic-action-remove',
+    NO_CHANGE: 'lic-action-nochange'
+  };
+
+  var tbodyHtml = changes.map(function(c) {
+    var cls   = actionClasses[c.action] || 'lic-action-nochange';
+    var label = c.action === 'NO_CHANGE' ? 'No change' : c.action;
+    var from  = c.fromSkuName || c.fromSku || '—';
+    var to    = c.toSkuName   || c.toSku   || '—';
+    return (
+      '<tr>' +
+        '<td class="small">' + escapeHtml(c.userEmail) + '</td>' +
+        '<td><span class="lic-action-badge ' + cls + '">' + escapeHtml(label) + '</span></td>' +
+        '<td class="small">' + escapeHtml(from) + '</td>' +
+        '<td class="small">' + escapeHtml(to)   + '</td>' +
+      '</tr>'
+    );
+  }).join('');
+
+  document.getElementById('lic-dryrun-tbody').innerHTML =
+    tbodyHtml || '<tr><td colspan="4" class="text-center text-muted small">No members found.</td></tr>';
+  document.getElementById('lic-dryrun-table-wrap').style.display = '';
+
+  var hasWork = counts.ASSIGN + counts.SWITCH + counts.REMOVE > 0;
+  document.getElementById('btn-lic-apply-from-dryrun').disabled = !hasWork;
+}
+
+/**
+ * Applies a live license sync (dryRun=false) and optionally logs to a sheet.
+ *
+ * @param {string}  groupEmail
+ * @param {string}  productId
+ * @param {string}  skuId
+ * @param {boolean} dryRun  Always false here (caller ensures this).
+ */
+function doApplySync(groupEmail, productId, skuId, dryRun) {
+  var spinner = document.getElementById('lic-sync-spinner');
+  document.getElementById('btn-lic-sync').disabled    = true;
+  document.getElementById('btn-lic-dry-run').disabled = true;
+  spinner.style.display = '';
+
+  google.script.run
+    .withSuccessHandler(function(changes) {
+      spinner.style.display = 'none';
+      document.getElementById('btn-lic-sync').disabled    = false;
+      document.getElementById('btn-lic-dry-run').disabled = false;
+
+      var assigned = changes.filter(function(c) { return c.action === 'ASSIGN';    }).length;
+      var switched = changes.filter(function(c) { return c.action === 'SWITCH';    }).length;
+      var removed  = changes.filter(function(c) { return c.action === 'REMOVE';    }).length;
+
+      var msg = 'Sync complete — ';
+      msg += assigned + ' assigned, ' + switched + ' switched, ' + removed + ' removed.';
+      showToast(msg, assigned + switched + removed > 0 ? 'success' : 'info');
+
+      // Refresh count
+      loadLicenseCount(productId, skuId);
+
+      // Log to sheet if requested
+      var logEnabled = document.getElementById('lic-log-enabled').checked;
+      if (logEnabled && changes.length > 0) {
+        var sheetUrl = document.getElementById('lic-sheet-url').value.trim();
+        var sheetId  = sheetUrl ? extractSheetIdFromUrl(sheetUrl) : null;
+        writeToSheet(groupEmail, productId, skuId, changes, sheetId);
+      }
+    })
+    .withFailureHandler(function(err) {
+      spinner.style.display = 'none';
+      document.getElementById('btn-lic-sync').disabled    = false;
+      document.getElementById('btn-lic-dry-run').disabled = false;
+      showToast('Sync failed: ' + err.message, 'danger');
+    })
+    .syncLicensesForGroup(groupEmail, productId, skuId, false);
+}
+
+/**
+ * Calls writeSyncLog on the server and shows a toast with the sheet URL.
+ */
+function writeToSheet(groupEmail, productId, skuId, changes, sheetId) {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      showToast('Sync log written to Google Sheet: ' + result.url, 'success');
+    })
+    .withFailureHandler(function(err) {
+      showToast('Failed to write sync log: ' + err.message, 'warning');
+    })
+    .writeSyncLog(groupEmail, productId, skuId, changes, sheetId);
+}
+
+/**
+ * Extracts the spreadsheet ID from a Google Sheets URL.
+ * Returns null if the URL doesn't match the expected pattern.
+ *
+ * @param {string} url
+ * @returns {string|null}
+ */
+function extractSheetIdFromUrl(url) {
+  var m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
 }
 </script>
 </body>
