@@ -1,16 +1,16 @@
 {
-  "timeZone": "America/New_York",
+  "timeZone": "America/Edmonton",
   "dependencies": {
     "enabledAdvancedServices": [
       {
         "userSymbol": "AdminDirectory",
-        "serviceId": "admin",
-        "version": "directory_v1"
+        "version": "directory_v1",
+        "serviceId": "admin"
       },
       {
         "userSymbol": "AdminLicenseManager",
-        "serviceId": "licensing",
-        "version": "v1"
+        "version": "v1",
+        "serviceId": "licensing"
       }
     ]
   },
@@ -22,5 +22,9 @@
     "https://www.googleapis.com/auth/script.external_request"
   ],
   "exceptionLogging": "STACKDRIVER",
-  "runtimeVersion": "V8"
+  "runtimeVersion": "V8",
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "DOMAIN"
+  }
 }
