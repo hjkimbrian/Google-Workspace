@@ -1161,6 +1161,26 @@
       </div>
 
       <!-- ══════════════════════════════════════════════════════════════════ -->
+      <!-- ── Section 0: Domain License Inventory ──────────────────────── -->
+      <!-- ══════════════════════════════════════════════════════════════════ -->
+      <div class="mb-5">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <p class="text-muted text-uppercase fw-semibold mb-0"
+             style="font-size:0.72rem;letter-spacing:0.06em">
+            <i class="bi bi-bar-chart me-1"></i>Domain License Inventory
+          </p>
+          <button id="btn-lic-inventory-refresh" class="btn btn-link btn-sm p-0 text-muted"
+                  type="button" title="Refresh counts">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
+        <div id="lic-inventory-loading" class="text-muted small" style="display:none">
+          <span class="spinner-border spinner-border-sm me-1"></span>Loading inventory…
+        </div>
+        <div id="lic-inventory-list" class="d-flex flex-wrap gap-2"></div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════════════ -->
       <!-- ── Section 1: User Licenses (user-first) ────────────────────── -->
       <!-- ══════════════════════════════════════════════════════════════════ -->
       <div class="mb-5">
@@ -1234,39 +1254,11 @@
           <i class="bi bi-diagram-3 me-1"></i>Group License Sync
         </p>
         <p class="text-muted small mb-3">
-          Synchronise license assignments so that every member of a group holds the
-          selected SKU — and no former members do.
+          Assign a Google Workspace license to every member of a group — and remove it
+          from anyone who leaves the group.
         </p>
 
-        <!-- Product + SKU (only shows active SKUs in the environment) -->
-        <div class="row g-2 mb-2">
-          <div class="col-sm-6">
-            <label class="form-label small fw-semibold" for="lic-product">Product</label>
-            <select id="lic-product" class="form-select form-select-sm">
-              <option value="">— loading… —</option>
-            </select>
-          </div>
-          <div class="col-sm-6">
-            <label class="form-label small fw-semibold" for="lic-sku">SKU</label>
-            <select id="lic-sku" class="form-select form-select-sm" disabled>
-              <option value="">— select a SKU —</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Inventory count -->
-        <div id="lic-count-wrap" class="mb-3" style="display:none">
-          <span class="text-muted small">
-            <i class="bi bi-people me-1"></i>
-            Licenses assigned:
-            <strong id="lic-count-value">–</strong>
-            <span id="lic-count-spinner" class="ms-1" style="display:none">
-              <span class="spinner-border spinner-border-sm"></span>
-            </span>
-          </span>
-        </div>
-
-        <!-- Group picker -->
+        <!-- Step 1 — pick a group -->
         <div class="row g-2 mb-3">
           <div class="col-sm-8">
             <label class="form-label small fw-semibold" for="lic-group">Group</label>
@@ -1274,6 +1266,28 @@
               <option value="">— loading groups… —</option>
             </select>
           </div>
+        </div>
+
+        <!-- Step 2 — pick a license (active Workspace SKUs only) -->
+        <div class="row g-2 mb-2">
+          <div class="col-sm-8">
+            <label class="form-label small fw-semibold" for="lic-sync-sku">License</label>
+            <select id="lic-sync-sku" class="form-select form-select-sm">
+              <option value="">— loading… —</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Current assigned count for chosen SKU -->
+        <div id="lic-count-wrap" class="mb-3" style="display:none">
+          <span class="text-muted small">
+            <i class="bi bi-people me-1"></i>
+            Currently assigned:
+            <strong id="lic-count-value">–</strong>
+            <span id="lic-count-spinner" class="ms-1" style="display:none">
+              <span class="spinner-border spinner-border-sm"></span>
+            </span>
+          </span>
         </div>
 
         <!-- Log options -->
@@ -3189,8 +3203,8 @@ function doRemoveCalendarAcl(btn) {
 
 var licState = {
   initialized:     false,
-  syncProducts:    [],  // Active products for group sync dropdown
-  assignSkus:      [],  // All assignable (non-archived/non-site-based) products+SKUs
+  syncSkus:        [],  // Active Workspace SKUs for group sync dropdown
+  assignSkus:      [],  // Assignable Workspace SKUs for user assignment picker
   userLicenses:    [],  // Licenses for the currently loaded user
   dryRunChanges:   null,
   pendingSyncArgs: null
@@ -3224,40 +3238,47 @@ function initLicensePage() {
     })
     .getAssignableLicenseSkus();
 
-  // ── Active products for the group sync dropdowns ──────────────────────
-  var productSel = document.getElementById('lic-product');
-  productSel.innerHTML = '<option value="">— loading… —</option>';
-
+  // ── Active Workspace SKUs for the group sync single dropdown ──────────
   google.script.run
-    .withSuccessHandler(function(products) {
-      licState.syncProducts = products;
-      renderSyncProductDropdown(products);
+    .withSuccessHandler(function(result) {
+      licState.syncSkus = result.skus || [];
+      renderSyncSkuDropdown(licState.syncSkus);
     })
     .withFailureHandler(function(err) {
-      productSel.innerHTML = '<option value="">— failed to load —</option>';
-      showToast('Failed to load active license products: ' + err.message, 'danger');
+      document.getElementById('lic-sync-sku').innerHTML =
+        '<option value="">— failed to load —</option>';
+      showToast('Failed to load active license SKUs: ' + err.message, 'danger');
     })
-    .getActiveLicenseProducts();
+    .getActiveWorkspaceSkus();
 
   // Load groups for sync section
   loadGroupList();
+
+  // ── Domain license inventory ──────────────────────────────────────────
+  loadLicenseInventory();
 
   // ── Wire up log-enable checkbox ───────────────────────────────────────
   document.getElementById('lic-log-enabled').addEventListener('change', function() {
     document.getElementById('lic-log-options').style.display = this.checked ? '' : 'none';
   });
 
-  // ── Group sync — product/SKU dropdowns ───────────────────────────────
-  document.getElementById('lic-product').addEventListener('change', onLicProductChange);
-  document.getElementById('lic-sku').addEventListener('change', function() {
-    var productId = document.getElementById('lic-product').value;
-    var skuId     = document.getElementById('lic-sku').value;
-    var hasSku    = !!(productId && skuId);
+  // ── Group sync — single SKU dropdown ─────────────────────────────────
+  document.getElementById('lic-sync-sku').addEventListener('change', function() {
+    var val    = this.value;           // "productId::skuId"
+    var hasSku = !!val;
     document.getElementById('lic-count-wrap').style.display = hasSku ? '' : 'none';
     document.getElementById('btn-lic-dry-run').disabled = !hasSku;
     document.getElementById('btn-lic-sync').disabled    = !hasSku;
-    if (hasSku) loadLicenseCount(productId, skuId);
+    if (hasSku) {
+      var parts     = val.split('::');
+      var productId = parts[0];
+      var skuId     = parts[1];
+      loadLicenseCount(productId, skuId);
+    }
   });
+
+  // ── Inventory refresh button ──────────────────────────────────────────
+  document.getElementById('btn-lic-inventory-refresh').addEventListener('click', loadLicenseInventory);
 
   // ── User section — load button ────────────────────────────────────────
   document.getElementById('btn-lic-load-user').addEventListener('click', function() {
@@ -3304,15 +3325,17 @@ function initLicensePage() {
 
   // ── Group sync — Sync Now button ──────────────────────────────────────
   document.getElementById('btn-lic-sync').addEventListener('click', function() {
-    var productId  = document.getElementById('lic-product').value;
-    var skuId      = document.getElementById('lic-sku').value;
+    var syncVal    = document.getElementById('lic-sync-sku').value;
     var groupEmail = document.getElementById('lic-group').value;
-    if (!productId || !skuId || !groupEmail) {
-      showToast('Select a product, SKU, and group first.', 'warning');
+    if (!syncVal || !groupEmail) {
+      showToast('Select a group and license first.', 'warning');
       return;
     }
-    var skuName   = document.getElementById('lic-sku').options[
-      document.getElementById('lic-sku').selectedIndex].text;
+    var parts     = syncVal.split('::');
+    var productId = parts[0];
+    var skuId     = parts[1];
+    var skuName   = document.getElementById('lic-sync-sku').options[
+      document.getElementById('lic-sync-sku').selectedIndex].text;
     var groupName = document.getElementById('lic-group').options[
       document.getElementById('lic-group').selectedIndex].text;
     document.getElementById('lic-confirm-body').innerHTML =
@@ -3437,42 +3460,56 @@ function onAssignSkuChange() {
   }
 }
 
-/** Renders the active-products <select> for the group sync section. */
-function renderSyncProductDropdown(products) {
-  var sel = document.getElementById('lic-product');
-  if (!products || products.length === 0) {
-    sel.innerHTML = '<option value="">— no active products found —</option>';
+/**
+ * Renders the flat active Workspace SKU list for the group sync dropdown.
+ * Option values are "productId::skuId" to carry both pieces of data.
+ */
+function renderSyncSkuDropdown(skus) {
+  var sel = document.getElementById('lic-sync-sku');
+  if (!skus || skus.length === 0) {
+    sel.innerHTML = '<option value="">— no active Workspace licenses found —</option>';
     return;
   }
-  sel.innerHTML = '<option value="">— select a product —</option>' +
-    products.map(function(p) {
-      return '<option value="' + escapeHtml(p.productId) + '">' +
-             escapeHtml(p.productName) + '</option>';
+  sel.innerHTML = '<option value="">— select a license —</option>' +
+    skus.map(function(s) {
+      return '<option value="' + escapeHtml(s.productId + '::' + s.skuId) + '">' +
+             escapeHtml(s.skuName) + '</option>';
     }).join('');
 }
 
-/** Populates the SKU dropdown when a sync-section product is selected. */
-function onLicProductChange() {
-  var productId = document.getElementById('lic-product').value;
-  var skuSel    = document.getElementById('lic-sku');
+/** Loads and renders the domain license inventory summary. */
+function loadLicenseInventory() {
+  var listEl    = document.getElementById('lic-inventory-list');
+  var loadingEl = document.getElementById('lic-inventory-loading');
+  listEl.innerHTML = '';
+  loadingEl.style.display = '';
 
-  skuSel.innerHTML = '<option value="">— select a SKU —</option>';
-  skuSel.disabled  = true;
-  document.getElementById('lic-count-wrap').style.display = 'none';
-  document.getElementById('btn-lic-dry-run').disabled = true;
-  document.getElementById('btn-lic-sync').disabled    = true;
+  google.script.run
+    .withSuccessHandler(function(result) {
+      loadingEl.style.display = 'none';
+      renderLicenseInventory(result.inventory || []);
+    })
+    .withFailureHandler(function(err) {
+      loadingEl.style.display = 'none';
+      listEl.innerHTML = '<span class="text-danger small">Failed to load inventory: ' +
+                         escapeHtml(err.message) + '</span>';
+    })
+    .getLicenseInventory();
+}
 
-  if (!productId) return;
-
-  var product = licState.syncProducts.find(function(p) { return p.productId === productId; });
-  if (!product) return;
-
-  skuSel.innerHTML = '<option value="">— select a SKU —</option>' +
-    product.skus.map(function(s) {
-      return '<option value="' + escapeHtml(s.skuId) + '">' +
-             escapeHtml(s.skuName) + '</option>';
-    }).join('');
-  skuSel.disabled = false;
+/** Renders inventory items as compact count pills. */
+function renderLicenseInventory(inventory) {
+  var listEl = document.getElementById('lic-inventory-list');
+  if (!inventory || inventory.length === 0) {
+    listEl.innerHTML = '<span class="text-muted small">No active licenses found.</span>';
+    return;
+  }
+  listEl.innerHTML = inventory.map(function(item) {
+    return '<span class="badge rounded-pill bg-light text-dark border small fw-normal px-3 py-2">' +
+             '<strong>' + escapeHtml(item.count + (item.capped ? '+' : '')) + '</strong>' +
+             ' &nbsp;' + escapeHtml(item.skuName) +
+           '</span>';
+  }).join('');
 }
 
 /** Fetches and displays the count of users assigned a specific SKU. */
@@ -3501,6 +3538,8 @@ function loadUserLicenses(email) {
   document.getElementById('lic-user-licenses').style.display = 'none';
   document.getElementById('btn-lic-apply').disabled = true;
   document.getElementById('lic-assign-hint').style.display = 'none';
+  // Reset the SKU picker so the hint stays hidden until admin explicitly picks one
+  document.getElementById('lic-assign-sku').value = '';
 
   google.script.run
     .withSuccessHandler(function(result) {
@@ -3648,17 +3687,19 @@ function loadGroupList() {
 
 /** Runs a dry-run sync and shows the preview modal. */
 function doDryRunSync() {
-  var productId  = document.getElementById('lic-product').value;
-  var skuId      = document.getElementById('lic-sku').value;
+  var syncVal    = document.getElementById('lic-sync-sku').value;
   var groupEmail = document.getElementById('lic-group').value;
 
-  if (!productId || !skuId || !groupEmail) {
-    showToast('Select a product, SKU, and group first.', 'warning');
+  if (!syncVal || !groupEmail) {
+    showToast('Select a group and license first.', 'warning');
     return;
   }
 
-  var skuName   = document.getElementById('lic-sku').options[
-    document.getElementById('lic-sku').selectedIndex].text;
+  var parts     = syncVal.split('::');
+  var productId = parts[0];
+  var skuId     = parts[1];
+  var skuName   = document.getElementById('lic-sync-sku').options[
+    document.getElementById('lic-sync-sku').selectedIndex].text;
   var groupName = document.getElementById('lic-group').options[
     document.getElementById('lic-group').selectedIndex].text;
 

@@ -877,6 +877,15 @@ var NON_ASSIGNABLE_SKU_IDS_ = [
   '1010310002',              // Education Fundamentals (site-based)
 ];
 
+/** Education SKU IDs — excluded from the standard assignment/sync dropdowns. */
+var EDUCATION_SKU_IDS_ = [
+  '1010310002', // Education Fundamentals (also non-assignable)
+  '1010310003', // Education Standard
+  '1010310001', // Education Plus – Legacy
+  '1010310005', // Education Plus
+  '1010310004', // Teaching and Learning Upgrade
+];
+
 /**
  * Full static catalog of Google Workspace product + SKU combinations.
  * Sourced from:
@@ -998,24 +1007,91 @@ function getActiveLicenseProducts() {
 }
 
 /**
- * Returns the full catalog minus SKUs that cannot be individually assigned
- * (archive-user SKUs and site-based blanket licenses).
+ * Returns Google Workspace (Google-Apps) SKUs that can be individually
+ * assigned, excluding archived SKUs, site-based SKUs, and Education SKUs.
  * Used to populate the per-user assignment picker.
  *
  * @returns {Array<{productId, productName, skus: Array<{skuId, skuName}>}>}
  */
 function getAssignableLicenseSkus() {
   var catalog = getLicenseProducts();
-  return catalog.map(function(product) {
-    return {
-      productId:   product.productId,
-      productName: product.productName,
-      skus: product.skus.filter(function(sku) {
-        return NON_ASSIGNABLE_SKU_IDS_.indexOf(sku.skuId) === -1 &&
-               sku.skuName.indexOf('Archived') === -1;
-      })
-    };
-  }).filter(function(p) { return p.skus.length > 0; });
+  return catalog
+    .filter(function(p) { return p.productId === 'Google-Apps'; })
+    .map(function(product) {
+      return {
+        productId:   product.productId,
+        productName: product.productName,
+        skus: product.skus.filter(function(sku) {
+          return NON_ASSIGNABLE_SKU_IDS_.indexOf(sku.skuId) === -1 &&
+                 sku.skuName.indexOf('Archived') === -1 &&
+                 EDUCATION_SKU_IDS_.indexOf(sku.skuId) === -1;
+        })
+      };
+    })
+    .filter(function(p) { return p.skus.length > 0; });
+}
+
+/**
+ * Returns a flat list of active Google Workspace SKUs (no Education) for the
+ * group-sync dropdown. Checks each SKU for at least one assignment.
+ *
+ * @returns {{ skus: Array<{productId, productName, skuId, skuName}> }}
+ */
+function getActiveWorkspaceSkus() {
+  var catalog = getLicenseProducts();
+  var workspace = catalog.filter(function(p) { return p.productId === 'Google-Apps'; });
+  var skus = [];
+
+  workspace.forEach(function(product) {
+    product.skus.forEach(function(sku) {
+      if (EDUCATION_SKU_IDS_.indexOf(sku.skuId) !== -1) return;
+      if (NON_ASSIGNABLE_SKU_IDS_.indexOf(sku.skuId) !== -1) return;
+      if (sku.skuName.indexOf('Archived') !== -1) return;
+      try {
+        var result = AdminLicenseManager.LicenseAssignments.listForProductAndSku(
+          product.productId, sku.skuId, 'my_customer', { maxResults: 1 }
+        );
+        if (result.items && result.items.length > 0) {
+          skus.push({
+            productId:   product.productId,
+            productName: product.productName,
+            skuId:       sku.skuId,
+            skuName:     sku.skuName
+          });
+        }
+      } catch (e) { /* SKU not in use — skip */ }
+    });
+  });
+
+  return { skus: skus };
+}
+
+/**
+ * Returns all active SKUs across all products with their assigned-user counts.
+ * Used to render the domain license inventory summary.
+ *
+ * @returns {{ inventory: Array<{productId, productName, skuId, skuName, count, capped}> }}
+ */
+function getLicenseInventory() {
+  var active    = getActiveLicenseProducts();
+  var inventory = [];
+
+  active.forEach(function(product) {
+    product.skus.forEach(function(sku) {
+      var result = getLicenseCount(product.productId, sku.skuId);
+      inventory.push({
+        productId:   product.productId,
+        productName: product.productName,
+        skuId:       sku.skuId,
+        skuName:     sku.skuName,
+        count:       result.count,
+        capped:      result.capped
+      });
+    });
+  });
+
+  inventory.sort(function(a, b) { return b.count - a.count; });
+  return { inventory: inventory };
 }
 
 /**
