@@ -3419,8 +3419,8 @@ function onAssignSkuChange() {
   var labelEl   = document.getElementById('btn-lic-apply-label');
 
   if (!skuId) {
-    applyBtn.disabled        = true;
-    hintEl.style.display     = 'none';
+    applyBtn.disabled    = true;
+    hintEl.style.display = 'none';
     return;
   }
 
@@ -3428,21 +3428,33 @@ function onAssignSkuChange() {
   var productId = opt.dataset.product;
   var skuName   = opt.text;
 
-  // Check if user already has a license in this product
+  // Strip "Google Workspace " prefix the API sometimes adds to SKU names
+  // so that "Google Workspace Enterprise Plus" == "Enterprise Plus".
+  function normName(n) {
+    return (n || '').replace(/^Google\s+Workspace\s+/i, '').trim().toLowerCase();
+  }
+
   var existingInProduct = licState.userLicenses.filter(function(l) {
     return l.productId === productId;
   });
 
-  if (existingInProduct.length > 0 && existingInProduct[0].skuId === skuId) {
-    // Exact same SKU already assigned
+  var isCurrent = existingInProduct.length > 0 && (
+    existingInProduct[0].skuId === skuId ||
+    normName(existingInProduct[0].skuName) === normName(skuName)
+  );
+
+  if (isCurrent) {
     applyBtn.disabled    = true;
     labelEl.textContent  = 'Already assigned';
-    hintEl.textContent   = 'This user already has ' + skuName + '.';
+    hintEl.innerHTML     = '<i class="bi bi-check-circle me-1 text-success"></i>' +
+                           'This user already has ' + escapeHtml(skuName) + '.';
     hintEl.style.display = '';
     opt.dataset.action   = 'none';
   } else if (existingInProduct.length > 0) {
     // Different SKU in same product → switch
-    var fromName = existingInProduct[0].skuName || existingInProduct[0].skuId;
+    var fromName = normName(existingInProduct[0].skuName || existingInProduct[0].skuId);
+    // Capitalise first letter for display
+    fromName = fromName.charAt(0).toUpperCase() + fromName.slice(1);
     applyBtn.disabled    = false;
     labelEl.textContent  = 'Switch';
     hintEl.innerHTML     = '<i class="bi bi-arrow-repeat me-1"></i>Will <strong>switch</strong> ' +

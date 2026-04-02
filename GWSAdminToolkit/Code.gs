@@ -1032,62 +1032,73 @@ function getAssignableLicenseSkus() {
 }
 
 /**
- * Returns a flat list of active Google Workspace SKUs (no Education) for the
- * group-sync dropdown. Checks each SKU for at least one assignment.
+ * Returns a flat list of all assignable Google Workspace SKUs (no Education,
+ * no archived) for the group-sync dropdown. Uses the static catalog — no API
+ * call needed, so it always returns results regardless of current assignments.
  *
  * @returns {{ skus: Array<{productId, productName, skuId, skuName}> }}
  */
 function getActiveWorkspaceSkus() {
-  var catalog = getLicenseProducts();
-  var workspace = catalog.filter(function(p) { return p.productId === 'Google-Apps'; });
+  var assignable = getAssignableLicenseSkus();
   var skus = [];
-
-  workspace.forEach(function(product) {
+  assignable.forEach(function(product) {
     product.skus.forEach(function(sku) {
-      if (EDUCATION_SKU_IDS_.indexOf(sku.skuId) !== -1) return;
-      if (NON_ASSIGNABLE_SKU_IDS_.indexOf(sku.skuId) !== -1) return;
-      if (sku.skuName.indexOf('Archived') !== -1) return;
-      try {
-        var result = AdminLicenseManager.LicenseAssignments.listForProductAndSku(
-          product.productId, sku.skuId, 'my_customer', { maxResults: 1 }
-        );
-        if (result.items && result.items.length > 0) {
-          skus.push({
-            productId:   product.productId,
-            productName: product.productName,
-            skuId:       sku.skuId,
-            skuName:     sku.skuName
-          });
-        }
-      } catch (e) { /* SKU not in use — skip */ }
+      skus.push({
+        productId:   product.productId,
+        productName: product.productName,
+        skuId:       sku.skuId,
+        skuName:     sku.skuName
+      });
     });
   });
-
   return { skus: skus };
 }
 
 /**
- * Returns all active SKUs across all products with their assigned-user counts.
- * Used to render the domain license inventory summary.
+ * Returns all Google Workspace SKUs with their assigned-user counts, built by
+ * paginating listForProduct (one call covers all SKUs) and grouping by skuId.
+ * SKU names come from the API response; falls back to the catalog if missing.
  *
- * @returns {{ inventory: Array<{productId, productName, skuId, skuName, count, capped}> }}
+ * @returns {{ inventory: Array<{productId, productName, skuId, skuName, count}> }}
  */
 function getLicenseInventory() {
-  var active    = getActiveLicenseProducts();
-  var inventory = [];
+  // Build catalog skuId → skuName lookup
+  var catalog   = getLicenseProducts();
+  var workspace = catalog.filter(function(p) { return p.productId === 'Google-Apps'; })[0];
+  var catalogNames = {};
+  if (workspace) {
+    workspace.skus.forEach(function(sku) { catalogNames[sku.skuId] = sku.skuName; });
+  }
 
-  active.forEach(function(product) {
-    product.skus.forEach(function(sku) {
-      var result = getLicenseCount(product.productId, sku.skuId);
-      inventory.push({
-        productId:   product.productId,
-        productName: product.productName,
-        skuId:       sku.skuId,
-        skuName:     sku.skuName,
-        count:       result.count,
-        capped:      result.capped
+  // Paginate listForProduct to count all assignments grouped by skuId
+  var skuCounts = {};
+  var skuNames  = {};
+  var pageToken = null;
+  do {
+    var opts = { maxResults: 1000 };
+    if (pageToken) opts.pageToken = pageToken;
+    try {
+      var data = AdminLicenseManager.LicenseAssignments.listForProduct(
+        'Google-Apps', 'my_customer', opts
+      );
+      (data.items || []).forEach(function(item) {
+        skuCounts[item.skuId] = (skuCounts[item.skuId] || 0) + 1;
+        if (item.skuName && !skuNames[item.skuId]) skuNames[item.skuId] = item.skuName;
       });
-    });
+      pageToken = data.nextPageToken || null;
+    } catch (e) {
+      break;
+    }
+  } while (pageToken);
+
+  var inventory = Object.keys(skuCounts).map(function(skuId) {
+    return {
+      productId:   'Google-Apps',
+      productName: 'Google Workspace',
+      skuId:       skuId,
+      skuName:     catalogNames[skuId] || skuNames[skuId] || skuId,
+      count:       skuCounts[skuId]
+    };
   });
 
   inventory.sort(function(a, b) { return b.count - a.count; });
