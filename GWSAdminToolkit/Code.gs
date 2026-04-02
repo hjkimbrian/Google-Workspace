@@ -1126,7 +1126,11 @@ function getLicenseInventory() {
       productId:   'Google-Apps',
       productName: 'Google Workspace',
       skuId:       skuId,
-      skuName:     catalogNames[skuId] || skuNames[skuId] || skuId,
+      // Prefer the API-provided skuName — it reflects the actual plan name in
+      // this domain, which may differ from the static catalog (e.g. skuId
+      // 1010020020 shows as "Business Starter" in the catalog but this domain
+      // may have it assigned as "Enterprise Plus").
+      skuName:     skuNames[skuId] || catalogNames[skuId] || skuId,
       count:       skuCounts[skuId]
     };
   });
@@ -1166,7 +1170,7 @@ function getUserLicenses(userEmail) {
         productId:   item.productId,
         productName: item.productName,
         skuId:       item.skuId,
-        skuName:     catalogNames[item.skuId] || item.skuName
+        skuName:     item.skuName || catalogNames[item.skuId]
       });
     } catch (e) {
       var msg = e.message || '';
@@ -1365,6 +1369,17 @@ function syncLicensesForGroup(groupEmail, productId, skuId, dryRun) {
   // Get all current licensees for this product (any SKU)
   var currentLicensees = getLicensedUsersForProduct_(productId);
 
+  // Build skuId → display name map (API-provided names take precedence over catalog)
+  var nameMap = {};
+  getLicenseProducts().forEach(function(p) {
+    p.skus.forEach(function(s) { nameMap[s.skuId] = s.skuName; });
+  });
+  try {
+    getLicenseInventory().inventory.forEach(function(item) {
+      nameMap[item.skuId] = item.skuName; // API name wins
+    });
+  } catch (e) { /* inventory unavailable — fall back to catalog names */ }
+
   // Build change list
   var changes = [];
 
@@ -1372,18 +1387,27 @@ function syncLicensesForGroup(groupEmail, productId, skuId, dryRun) {
   Object.keys(memberSet).forEach(function(email) {
     var currentSku = currentLicensees[email];
     if (!currentSku) {
-      changes.push({ action: 'ASSIGN',    email: email, fromSku: null,       toSku: skuId });
+      changes.push({ action: 'ASSIGN',    email: email,
+                     fromSku: null,       fromSkuName: null,
+                     toSku: skuId,        toSkuName: nameMap[skuId] || skuId });
     } else if (currentSku === skuId) {
-      changes.push({ action: 'NO_CHANGE', email: email, fromSku: currentSku, toSku: skuId });
+      changes.push({ action: 'NO_CHANGE', email: email,
+                     fromSku: currentSku, fromSkuName: nameMap[currentSku] || currentSku,
+                     toSku: skuId,        toSkuName: nameMap[skuId] || skuId });
     } else {
-      changes.push({ action: 'SWITCH',    email: email, fromSku: currentSku, toSku: skuId });
+      changes.push({ action: 'SWITCH',    email: email,
+                     fromSku: currentSku, fromSkuName: nameMap[currentSku] || currentSku,
+                     toSku: skuId,        toSkuName: nameMap[skuId] || skuId });
     }
   });
 
-  // Process licensed users NOT in the group
+  // Process licensed users NOT in the group → remove their license
   Object.keys(currentLicensees).forEach(function(email) {
     if (!memberSet[email]) {
-      changes.push({ action: 'REMOVE', email: email, fromSku: currentLicensees[email], toSku: null });
+      var fromSku = currentLicensees[email];
+      changes.push({ action: 'REMOVE', email: email,
+                     fromSku: fromSku, fromSkuName: nameMap[fromSku] || fromSku,
+                     toSku: null,      toSkuName: null });
     }
   });
 
@@ -1482,8 +1506,9 @@ function writeSyncLog(groupEmail, productId, skuId, changes, sheetId) {
  * @returns {Object}
  */
 function getLicensedUsersForProduct_(productId) {
-  var result    = {};
-  var pageToken = null;
+  var result     = {};
+  var customerId = getCustomerId_();
+  var pageToken  = null;
 
   do {
     var opts = { maxResults: 1000 };
@@ -1491,7 +1516,7 @@ function getLicensedUsersForProduct_(productId) {
 
     try {
       var data = AdminLicenseManager.LicenseAssignments.listForProduct(
-        productId, 'my_customer', opts
+        productId, customerId, opts
       );
       (data.items || []).forEach(function(item) {
         result[item.userId.toLowerCase()] = item.skuId;
