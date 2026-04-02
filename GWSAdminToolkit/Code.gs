@@ -862,6 +862,22 @@ function removeCalendarAcl(ownerEmail, ruleId) {
 // the advanced service runs as the deploying admin's credentials.
 
 /**
+ * Returns the domain's real customer ID (e.g. "C0abc123") by looking up the
+ * deploying admin's account via the Directory API. Falls back to 'my_customer'
+ * if the lookup fails. The Licensing API list operations require this ID.
+ *
+ * @returns {string}
+ */
+function getCustomerId_() {
+  try {
+    var admin = AdminDirectory.Users.get(Session.getActiveUser().getEmail());
+    return admin.customerId || 'my_customer';
+  } catch (e) {
+    return 'my_customer';
+  }
+}
+
+/**
  * SKU IDs that cannot be individually assigned:
  *   – "Archived User" SKUs  (retain data, no active service)
  *   – "Former Employee" vault archive SKU
@@ -1071,24 +1087,22 @@ function getLicenseInventory() {
   }
 
   // Paginate listForProduct to count all assignments grouped by skuId
-  var skuCounts = {};
-  var skuNames  = {};
-  var pageToken = null;
+  var customerId = getCustomerId_();
+  var skuCounts  = {};
+  var skuNames   = {};
+  var pageToken  = null;
   do {
     var opts = { maxResults: 1000 };
     if (pageToken) opts.pageToken = pageToken;
-    try {
-      var data = AdminLicenseManager.LicenseAssignments.listForProduct(
-        'Google-Apps', 'my_customer', opts
-      );
-      (data.items || []).forEach(function(item) {
-        skuCounts[item.skuId] = (skuCounts[item.skuId] || 0) + 1;
-        if (item.skuName && !skuNames[item.skuId]) skuNames[item.skuId] = item.skuName;
-      });
-      pageToken = data.nextPageToken || null;
-    } catch (e) {
-      break;
-    }
+    // Let errors propagate — silent breaks were masking failures as empty results
+    var data = AdminLicenseManager.LicenseAssignments.listForProduct(
+      'Google-Apps', customerId, opts
+    );
+    (data.items || []).forEach(function(item) {
+      skuCounts[item.skuId] = (skuCounts[item.skuId] || 0) + 1;
+      if (item.skuName && !skuNames[item.skuId]) skuNames[item.skuId] = item.skuName;
+    });
+    pageToken = data.nextPageToken || null;
   } while (pageToken);
 
   var inventory = Object.keys(skuCounts).map(function(skuId) {
@@ -1116,6 +1130,7 @@ function getLicenseInventory() {
  */
 function getUserLicenses(userEmail) {
   var emailLower = userEmail.toLowerCase();
+  var customerId = getCustomerId_();
   var products   = getLicenseProducts();
   var licenses   = [];
 
@@ -1131,8 +1146,9 @@ function getUserLicenses(userEmail) {
       var opts = { maxResults: 1000 };
       if (pageToken) opts.pageToken = pageToken;
       try {
+        // Let errors propagate — silent breaks were masking failures as empty results
         var data = AdminLicenseManager.LicenseAssignments.listForProduct(
-          product.productId, 'my_customer', opts
+          product.productId, customerId, opts
         );
         var found = false;
         (data.items || []).forEach(function(item) {
@@ -1155,7 +1171,7 @@ function getUserLicenses(userEmail) {
             'Permission denied: the apps.licensing OAuth scope has not been authorized.'
           );
         }
-        break; // Product not available / other error — skip it
+        // Other errors (invalid productId, not supported) — skip this product only
       }
     } while (pageToken);
   });
