@@ -1034,16 +1034,23 @@ function getUserLicenses(userEmail) {
     for (var j = 0; j < product.skus.length; j++) {
       var sku = product.skus[j];
       try {
-        AdminLicenseManager.LicenseAssignments.get(
+        var assignment = AdminLicenseManager.LicenseAssignments.get(
           product.productId, sku.skuId, userEmail
         );
-        // No exception → license is assigned.
-        licenses.push({
-          productId:   product.productId,
-          productName: product.productName,
-          skuId:       sku.skuId,
-          skuName:     sku.skuName
-        });
+        // Use skuId/skuName from the API response — the response reflects the
+        // user's actual assigned SKU, which may differ from the catalog entry
+        // used to query (e.g. querying Business Starter may return Enterprise Plus).
+        var actualSkuId   = (assignment && assignment.skuId)   || sku.skuId;
+        var actualSkuName = (assignment && assignment.skuName) || sku.skuName;
+        // Deduplicate — the same assignment can match multiple catalog queries.
+        if (!licenses.some(function(l) { return l.skuId === actualSkuId; })) {
+          licenses.push({
+            productId:   product.productId,
+            productName: product.productName,
+            skuId:       actualSkuId,
+            skuName:     actualSkuName
+          });
+        }
       } catch (e) {
         var msg = e.message || '';
         // Silently skip any "not assigned" response — the API surfaces these
