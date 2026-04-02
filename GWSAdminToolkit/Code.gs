@@ -1028,6 +1028,7 @@ function getAssignableLicenseSkus() {
 function getUserLicenses(userEmail) {
   var products  = getLicenseProducts();
   var licenses  = [];
+  var errors    = [];
 
   products.forEach(function(product) {
     product.skus.forEach(function(sku) {
@@ -1043,10 +1044,19 @@ function getUserLicenses(userEmail) {
           skuName:     sku.skuName
         });
       } catch (e) {
-        // 404 = not assigned for this SKU — skip.
+        // Only a 404 means the SKU is simply not assigned — anything else
+        // (403, 500, quota error, etc.) is an unexpected failure that we
+        // should surface rather than silently treating as "no license".
+        if (e.message && e.message.indexOf('404') === -1) {
+          errors.push(sku.skuId + ': ' + e.message);
+        }
       }
     });
   });
+
+  if (errors.length > 0) {
+    throw new Error('License lookup failed for one or more SKUs: ' + errors.join('; '));
+  }
 
   return { licenses: licenses };
 }
