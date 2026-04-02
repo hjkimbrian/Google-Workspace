@@ -856,18 +856,31 @@ function removeCalendarAcl(ownerEmail, ruleId) {
 }
 
 // ─── License Management ───────────────────────────────────────────────────────
-
-/** Base URL for the Enterprise License Manager API v1. */
-var LICENSE_API_BASE_ =
-  'https://www.googleapis.com/apps/licensing/v1/product/';
+//
+// All Licensing API calls use the AdminLicenseManager advanced service
+// (enabled in appsscript.json). No service account token needed here —
+// the advanced service runs as the deploying admin's credentials.
 
 /**
- * Returns the static catalog of Google Workspace product + SKU combinations.
- *
- * Product and SKU IDs sourced from:
+ * SKU IDs that cannot be individually assigned:
+ *   – "Archived User" SKUs  (retain data, no active service)
+ *   – "Former Employee" vault archive SKU
+ *   – Education Fundamentals (site-based blanket license, not per-user)
+ */
+var NON_ASSIGNABLE_SKU_IDS_ = [
+  '1010020021',              // Business Starter – Archived
+  '1010020027',              // Business Standard – Archived
+  '1010020023',              // Business Plus – Archived
+  '1010020029',              // Enterprise Standard – Archived
+  '1010020031',              // Enterprise Plus – Archived
+  'Google-Vault-Former-Employee', // Vault Former Employee (archive)
+  '1010310002',              // Education Fundamentals (site-based)
+];
+
+/**
+ * Full static catalog of Google Workspace product + SKU combinations.
+ * Sourced from:
  * https://developers.google.com/workspace/admin/licensing/v1/how-tos/products
- *
- * Update this list if your domain uses products not included here.
  *
  * @returns {Array<{productId, productName, skus: Array<{skuId, skuName}>}>}
  */
@@ -905,8 +918,8 @@ function getLicenseProducts() {
       productId: 'Google-Vault',
       productName: 'Google Vault',
       skus: [
-        { skuId: 'Google-Vault',                  skuName: 'Google Vault' },
-        { skuId: 'Google-Vault-Former-Employee',   skuName: 'Former Employee' },
+        { skuId: 'Google-Vault',                skuName: 'Google Vault' },
+        { skuId: 'Google-Vault-Former-Employee', skuName: 'Former Employee' },
       ]
     },
     {
@@ -943,46 +956,96 @@ function getLicenseProducts() {
 }
 
 /**
+ * Returns only product + SKU combinations that have at least one license
+ * currently assigned in the domain. Used to populate the Group Sync dropdowns
+ * so admins only see what is actually in their environment.
+ *
+ * Checks each SKU individually via AdminLicenseManager.LicenseAssignments
+ * .listForProductAndSku() with maxResults=1 — fast and precise.
+ *
+ * @returns {Array<{productId, productName, skus: Array<{skuId, skuName}>}>}
+ */
+function getActiveLicenseProducts() {
+  var catalog         = getLicenseProducts();
+  var activeProducts  = [];
+
+  catalog.forEach(function(product) {
+    var activeSkus = [];
+
+    product.skus.forEach(function(sku) {
+      try {
+        var result = AdminLicenseManager.LicenseAssignments.listForProductAndSku(
+          product.productId, sku.skuId, 'my_customer', { maxResults: 1 }
+        );
+        if (result.items && result.items.length > 0) {
+          activeSkus.push(sku);
+        }
+      } catch (e) {
+        // No assignments for this SKU — skip it.
+      }
+    });
+
+    if (activeSkus.length > 0) {
+      activeProducts.push({
+        productId:   product.productId,
+        productName: product.productName,
+        skus:        activeSkus
+      });
+    }
+  });
+
+  return activeProducts;
+}
+
+/**
+ * Returns the full catalog minus SKUs that cannot be individually assigned
+ * (archive-user SKUs and site-based blanket licenses).
+ * Used to populate the per-user assignment picker.
+ *
+ * @returns {Array<{productId, productName, skus: Array<{skuId, skuName}>}>}
+ */
+function getAssignableLicenseSkus() {
+  var catalog = getLicenseProducts();
+  return catalog.map(function(product) {
+    return {
+      productId:   product.productId,
+      productName: product.productName,
+      skus: product.skus.filter(function(sku) {
+        return NON_ASSIGNABLE_SKU_IDS_.indexOf(sku.skuId) === -1 &&
+               sku.skuName.indexOf('Archived') === -1;
+      })
+    };
+  }).filter(function(p) { return p.skus.length > 0; });
+}
+
+/**
  * Returns all license assignments for a user across all known products/SKUs.
- * Uses fetchAll for parallel requests to minimise latency.
+ * Uses AdminLicenseManager advanced service.
  *
  * @param {string} userEmail
  * @returns {{ licenses: Array<{productId, productName, skuId, skuName}> }}
  */
 function getUserLicenses(userEmail) {
-  const { adminEmail } = getConfig();
-  const token    = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
-  const products = getLicenseProducts();
-
-  var requests = [];
-  var meta     = [];
+  var products  = getLicenseProducts();
+  var licenses  = [];
 
   products.forEach(function(product) {
     product.skus.forEach(function(sku) {
-      requests.push({
-        url: LICENSE_API_BASE_ +
-          encodeURIComponent(product.productId) + '/sku/' +
-          encodeURIComponent(sku.skuId) + '/user/' +
-          encodeURIComponent(userEmail),
-        headers: { Authorization: 'Bearer ' + token },
-        muteHttpExceptions: true
-      });
-      meta.push({ product: product, sku: sku });
+      try {
+        AdminLicenseManager.LicenseAssignments.get(
+          product.productId, sku.skuId, userEmail
+        );
+        // No exception → license is assigned.
+        licenses.push({
+          productId:   product.productId,
+          productName: product.productName,
+          skuId:       sku.skuId,
+          skuName:     sku.skuName
+        });
+      } catch (e) {
+        // 404 = not assigned for this SKU — skip.
+      }
     });
-  });
-
-  var responses = UrlFetchApp.fetchAll(requests);
-  var licenses  = [];
-
-  responses.forEach(function(resp, i) {
-    if (resp.getResponseCode() === 200) {
-      licenses.push({
-        productId:   meta[i].product.productId,
-        productName: meta[i].product.productName,
-        skuId:       meta[i].sku.skuId,
-        skuName:     meta[i].sku.skuName
-      });
-    }
   });
 
   return { licenses: licenses };
@@ -990,43 +1053,34 @@ function getUserLicenses(userEmail) {
 
 /**
  * Counts the number of users assigned to a specific product + SKU.
- * Paginates up to 50,000 users and sets capped=true if that limit is reached.
+ * Paginates up to 50,000 users; sets capped=true if that limit is reached.
  *
  * @param {string} productId
  * @param {string} skuId
  * @returns {{ count: number, capped: boolean }}
  */
 function getLicenseCount(productId, skuId) {
-  const { adminEmail } = getConfig();
-  const token      = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
-  const MAX_RESULTS = 1000;
-  const MAX_PAGES   = 50;
-
-  var count = 0;
-  var capped = false;
+  var count     = 0;
+  var capped    = false;
   var pageToken = null;
-  var page = 0;
+  var page      = 0;
+  var MAX_PAGES = 50;
 
   do {
-    var url =
-      LICENSE_API_BASE_ + encodeURIComponent(productId) +
-      '/sku/' + encodeURIComponent(skuId) +
-      '/users?maxResults=' + MAX_RESULTS + '&customerId=my_customer';
-    if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+    var opts = { maxResults: 1000 };
+    if (pageToken) opts.pageToken = pageToken;
 
-    var resp = UrlFetchApp.fetch(url, {
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
-    });
-
-    if (resp.getResponseCode() !== 200) break;
-
-    var data = JSON.parse(resp.getContentText());
-    count += (data.items || []).length;
-    pageToken = data.nextPageToken || null;
-    page++;
-
-    if (page >= MAX_PAGES && pageToken) { capped = true; break; }
+    try {
+      var result = AdminLicenseManager.LicenseAssignments.listForProductAndSku(
+        productId, skuId, 'my_customer', opts
+      );
+      count    += (result.items || []).length;
+      pageToken = result.nextPageToken || null;
+      page++;
+      if (page >= MAX_PAGES && pageToken) { capped = true; break; }
+    } catch (e) {
+      break;
+    }
   } while (pageToken);
 
   return { count: count, capped: capped };
@@ -1035,51 +1089,30 @@ function getLicenseCount(productId, skuId) {
 /**
  * Assigns a license to a user.
  *
- * A 412 response indicates the user's OU has automatic licensing enabled and
- * the assignment cannot be overridden via the API.
- *
  * @param {string} userEmail
  * @param {string} productId
  * @param {string} skuId
  * @returns {object} The created LicenseAssignment resource.
  */
 function assignLicense(userEmail, productId, skuId) {
-  const { adminEmail } = getConfig();
-  const token = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
-
-  var resp = UrlFetchApp.fetch(
-    LICENSE_API_BASE_ + encodeURIComponent(productId) +
-    '/sku/' + encodeURIComponent(skuId) + '/user',
-    {
-      method: 'POST',
-      headers: {
-        Authorization:  'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
-      payload: JSON.stringify({ userId: userEmail }),
-      muteHttpExceptions: true
-    }
-  );
-
-  if (resp.getResponseCode() !== 200) {
-    if (resp.getResponseCode() === 412) {
+  try {
+    return AdminLicenseManager.LicenseAssignments.insert(
+      { userId: userEmail }, productId, skuId
+    );
+  } catch (e) {
+    if (e.message && e.message.indexOf('412') !== -1) {
       throw new Error(
         'License cannot be assigned — the user\'s OU may have automatic licensing ' +
         'enabled. Disable auto-licensing for their OU in the Admin Console first. ' +
-        'Details: ' + resp.getContentText()
+        'Details: ' + e.message
       );
     }
-    throw new Error(
-      'Assign license failed (' + resp.getResponseCode() + '): ' + resp.getContentText()
-    );
+    throw new Error('Assign license failed: ' + e.message);
   }
-
-  return JSON.parse(resp.getContentText());
 }
 
 /**
  * Switches a user from one SKU to another within the same product.
- * Uses the licenseAssignments.update (PUT) method.
  *
  * @param {string} userEmail
  * @param {string} productId   Must be the same product for both SKUs.
@@ -1088,37 +1121,19 @@ function assignLicense(userEmail, productId, skuId) {
  * @returns {object} The updated LicenseAssignment resource.
  */
 function switchLicense(userEmail, productId, oldSkuId, newSkuId) {
-  const { adminEmail } = getConfig();
-  const token = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
-
-  var resp = UrlFetchApp.fetch(
-    LICENSE_API_BASE_ + encodeURIComponent(productId) +
-    '/sku/' + encodeURIComponent(oldSkuId) +
-    '/user/' + encodeURIComponent(userEmail),
-    {
-      method: 'PUT',
-      headers: {
-        Authorization:  'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
-      payload: JSON.stringify({ skuId: newSkuId }),
-      muteHttpExceptions: true
-    }
-  );
-
-  if (resp.getResponseCode() !== 200) {
-    if (resp.getResponseCode() === 412) {
+  try {
+    return AdminLicenseManager.LicenseAssignments.update(
+      { skuId: newSkuId }, productId, oldSkuId, userEmail
+    );
+  } catch (e) {
+    if (e.message && e.message.indexOf('412') !== -1) {
       throw new Error(
         'License cannot be switched — the user\'s OU may have automatic licensing ' +
-        'enabled. Details: ' + resp.getContentText()
+        'enabled. Details: ' + e.message
       );
     }
-    throw new Error(
-      'Switch license failed (' + resp.getResponseCode() + '): ' + resp.getContentText()
-    );
+    throw new Error('Switch license failed: ' + e.message);
   }
-
-  return JSON.parse(resp.getContentText());
 }
 
 /**
@@ -1130,27 +1145,12 @@ function switchLicense(userEmail, productId, oldSkuId, newSkuId) {
  * @returns {{ success: boolean }}
  */
 function unassignLicense(userEmail, productId, skuId) {
-  const { adminEmail } = getConfig();
-  const token = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
-
-  var resp = UrlFetchApp.fetch(
-    LICENSE_API_BASE_ + encodeURIComponent(productId) +
-    '/sku/' + encodeURIComponent(skuId) +
-    '/user/' + encodeURIComponent(userEmail),
-    {
-      method: 'DELETE',
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
-    }
-  );
-
-  if (resp.getResponseCode() !== 200 && resp.getResponseCode() !== 204) {
-    throw new Error(
-      'Unassign license failed (' + resp.getResponseCode() + '): ' + resp.getContentText()
-    );
+  try {
+    AdminLicenseManager.LicenseAssignments.remove(productId, skuId, userEmail);
+    return { success: true };
+  } catch (e) {
+    throw new Error('Unassign license failed: ' + e.message);
   }
-
-  return { success: true };
 }
 
 /**
@@ -1226,16 +1226,13 @@ function getGroupMembers(groupEmail) {
  * @returns {{ changes: Array, applied: boolean }}
  */
 function syncLicensesForGroup(groupEmail, productId, skuId, dryRun) {
-  const { adminEmail } = getConfig();
-  const licToken = getServiceAccountToken_(adminEmail, [SCOPE_LICENSING_]);
-
   // Resolve group membership
   var memberResult = getGroupMembers(groupEmail);
   var memberSet    = {};
   memberResult.members.forEach(function(email) { memberSet[email] = true; });
 
   // Get all current licensees for this product (any SKU)
-  var currentLicensees = getLicensedUsersForProduct_(productId, licToken);
+  var currentLicensees = getLicensedUsersForProduct_(productId);
 
   // Build change list
   var changes = [];
@@ -1348,33 +1345,30 @@ function writeSyncLog(groupEmail, productId, skuId, changes, sheetId) {
 
 /**
  * Returns { lowerEmail: skuId } for all users licensed under productId (any SKU).
+ * Uses AdminLicenseManager advanced service.
  *
  * @param {string} productId
- * @param {string} token  Pre-fetched licensing token.
  * @returns {Object}
  */
-function getLicensedUsersForProduct_(productId, token) {
+function getLicensedUsersForProduct_(productId) {
   var result    = {};
   var pageToken = null;
 
   do {
-    var url =
-      LICENSE_API_BASE_ + encodeURIComponent(productId) +
-      '/users?maxResults=1000&customerId=my_customer';
-    if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+    var opts = { maxResults: 1000 };
+    if (pageToken) opts.pageToken = pageToken;
 
-    var resp = UrlFetchApp.fetch(url, {
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
-    });
-
-    if (resp.getResponseCode() !== 200) break;
-
-    var data = JSON.parse(resp.getContentText());
-    (data.items || []).forEach(function(item) {
-      result[item.userId.toLowerCase()] = item.skuId;
-    });
-    pageToken = data.nextPageToken || null;
+    try {
+      var data = AdminLicenseManager.LicenseAssignments.listForProduct(
+        productId, 'my_customer', opts
+      );
+      (data.items || []).forEach(function(item) {
+        result[item.userId.toLowerCase()] = item.skuId;
+      });
+      pageToken = data.nextPageToken || null;
+    } catch (e) {
+      break;
+    }
   } while (pageToken);
 
   return result;
