@@ -1106,61 +1106,59 @@ function getLicenseInventory() {
 }
 
 /**
- * Returns all license assignments for a user across all known products/SKUs.
- * Uses AdminLicenseManager advanced service.
+ * Returns all license assignments for a user by scanning listForProduct for
+ * each known product. This is more reliable than get()-per-SKU because it
+ * returns exactly what the API has assigned rather than depending on catalog
+ * SKU IDs matching the API's internal IDs.
  *
  * @param {string} userEmail
  * @returns {{ licenses: Array<{productId, productName, skuId, skuName}> }}
  */
 function getUserLicenses(userEmail) {
-  var products  = getLicenseProducts();
-  var licenses  = [];
+  var emailLower = userEmail.toLowerCase();
+  var products   = getLicenseProducts();
+  var licenses   = [];
 
-  for (var i = 0; i < products.length; i++) {
-    var product = products[i];
-    for (var j = 0; j < product.skus.length; j++) {
-      var sku = product.skus[j];
+  // Build skuId → catalog name lookup for display
+  var catalogNames = {};
+  products.forEach(function(p) {
+    p.skus.forEach(function(s) { catalogNames[s.skuId] = s.skuName; });
+  });
+
+  products.forEach(function(product) {
+    var pageToken = null;
+    do {
+      var opts = { maxResults: 1000 };
+      if (pageToken) opts.pageToken = pageToken;
       try {
-        var assignment = AdminLicenseManager.LicenseAssignments.get(
-          product.productId, sku.skuId, userEmail
+        var data = AdminLicenseManager.LicenseAssignments.listForProduct(
+          product.productId, 'my_customer', opts
         );
-        // Use skuId/skuName from the API response — the response reflects the
-        // user's actual assigned SKU, which may differ from the catalog entry
-        // used to query (e.g. querying Business Starter may return Enterprise Plus).
-        var actualSkuId   = (assignment && assignment.skuId)   || sku.skuId;
-        var actualSkuName = (assignment && assignment.skuName) || sku.skuName;
-        // Deduplicate — the same assignment can match multiple catalog queries.
-        if (!licenses.some(function(l) { return l.skuId === actualSkuId; })) {
-          licenses.push({
-            productId:   product.productId,
-            productName: product.productName,
-            skuId:       actualSkuId,
-            skuName:     actualSkuName
-          });
-        }
+        var found = false;
+        (data.items || []).forEach(function(item) {
+          if ((item.userId || '').toLowerCase() === emailLower) {
+            found = true;
+            licenses.push({
+              productId:   product.productId,
+              productName: product.productName,
+              skuId:       item.skuId,
+              skuName:     catalogNames[item.skuId] || item.skuName || item.skuId
+            });
+          }
+        });
+        // Stop paging this product once the user is found
+        pageToken = found ? null : (data.nextPageToken || null);
       } catch (e) {
         var msg = e.message || '';
-        // Silently skip any "not assigned" response — the API surfaces these
-        // in several different ways depending on the SKU/product.
-        if (msg.indexOf('404') !== -1 ||
-            msg.indexOf('does not have a license') !== -1 ||
-            msg.indexOf('Invalid productId') !== -1 ||
-            msg.indexOf('Invalid skuId') !== -1) {
-          continue;
-        }
         if (msg.indexOf('403') !== -1 || msg.indexOf('do not have permission') !== -1) {
-          // Permission error applies to all SKUs — fail fast with a clear message.
           throw new Error(
-            'Permission denied: the apps.licensing OAuth scope has not been ' +
-            'authorized. Re-authorize the script at ' +
-            'https://developers.google.com/apps-script/guides/support/troubleshooting#authorization-is'
+            'Permission denied: the apps.licensing OAuth scope has not been authorized.'
           );
         }
-        // Any other unexpected error (quota, 500, etc.) — surface it immediately.
-        throw new Error('License lookup failed for SKU ' + sku.skuId + ': ' + msg);
+        break; // Product not available / other error — skip it
       }
-    }
-  }
+    } while (pageToken);
+  });
 
   return { licenses: licenses };
 }
