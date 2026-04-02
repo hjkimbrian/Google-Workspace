@@ -1401,9 +1401,10 @@ function syncLicensesForGroup(groupEmail, productId, skuId, dryRun) {
     }
   });
 
-  // Process licensed users NOT in the group → remove their license
+  // Process licensed users NOT in the group who hold the target SKU specifically.
+  // Users with a different SKU are unaffected — we only manage the target SKU.
   Object.keys(currentLicensees).forEach(function(email) {
-    if (!memberSet[email]) {
+    if (!memberSet[email] && currentLicensees[email] === skuId) {
       var fromSku = currentLicensees[email];
       changes.push({ action: 'REMOVE', email: email,
                      fromSku: fromSku, fromSkuName: nameMap[fromSku] || fromSku,
