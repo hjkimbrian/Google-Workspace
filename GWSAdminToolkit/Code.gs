@@ -903,6 +903,18 @@ var EDUCATION_SKU_IDS_ = [
 ];
 
 /**
+ * Legacy G Suite SKU IDs and Essentials SKU IDs that cannot coexist with
+ * standard Workspace (Business/Enterprise) SKUs — excluded from all dropdowns.
+ */
+var LEGACY_AND_ESSENTIALS_SKU_IDS_ = [
+  'Google-Apps-For-Business', // G Suite Basic (Legacy)
+  'Google-Apps-Unlimited',    // G Suite Business (Legacy)
+  '1010060001',               // Enterprise Essentials
+  '1010060003',               // Essentials
+  '1010060005',               // Enterprise Essentials Plus
+];
+
+/**
  * Full static catalog of Google Workspace product + SKU combinations.
  * Sourced from:
  * https://developers.google.com/workspace/admin/licensing/v1/how-tos/products
@@ -1040,7 +1052,8 @@ function getAssignableLicenseSkus() {
         skus: product.skus.filter(function(sku) {
           return NON_ASSIGNABLE_SKU_IDS_.indexOf(sku.skuId) === -1 &&
                  sku.skuName.indexOf('Archived') === -1 &&
-                 EDUCATION_SKU_IDS_.indexOf(sku.skuId) === -1;
+                 EDUCATION_SKU_IDS_.indexOf(sku.skuId) === -1 &&
+                 LEGACY_AND_ESSENTIALS_SKU_IDS_.indexOf(sku.skuId) === -1;
         })
       };
     })
@@ -1048,24 +1061,27 @@ function getAssignableLicenseSkus() {
 }
 
 /**
- * Returns a flat list of all assignable Google Workspace SKUs (no Education,
- * no archived) for the group-sync dropdown. Uses the static catalog — no API
- * call needed, so it always returns results regardless of current assignments.
+ * Returns a flat list of Google Workspace SKUs currently in use in the domain,
+ * filtered to only assignable SKUs (no archived, no education, no legacy, no
+ * essentials). Builds from getLicenseInventory() so it matches what the
+ * Domain License Inventory section shows.
  *
  * @returns {{ skus: Array<{productId, productName, skuId, skuName}> }}
  */
 function getActiveWorkspaceSkus() {
-  var assignable = getAssignableLicenseSkus();
-  var skus = [];
-  assignable.forEach(function(product) {
-    product.skus.forEach(function(sku) {
-      skus.push({
-        productId:   product.productId,
-        productName: product.productName,
-        skuId:       sku.skuId,
-        skuName:     sku.skuName
-      });
-    });
+  var result = getLicenseInventory();
+  var skus = result.inventory.filter(function(item) {
+    return NON_ASSIGNABLE_SKU_IDS_.indexOf(item.skuId) === -1 &&
+           EDUCATION_SKU_IDS_.indexOf(item.skuId) === -1 &&
+           LEGACY_AND_ESSENTIALS_SKU_IDS_.indexOf(item.skuId) === -1 &&
+           item.skuName.indexOf('Archived') === -1;
+  }).map(function(item) {
+    return {
+      productId:   item.productId,
+      productName: item.productName,
+      skuId:       item.skuId,
+      skuName:     item.skuName
+    };
   });
   return { skus: skus };
 }

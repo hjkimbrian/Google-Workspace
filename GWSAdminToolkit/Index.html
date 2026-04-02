@@ -3452,9 +3452,9 @@ function onAssignSkuChange() {
     opt.dataset.action   = 'none';
   } else if (existingInProduct.length > 0) {
     // Different SKU in same product → switch
-    var fromName = normName(existingInProduct[0].skuName || existingInProduct[0].skuId);
-    // Capitalise first letter for display
-    fromName = fromName.charAt(0).toUpperCase() + fromName.slice(1);
+    // Strip "Google Workspace" prefix but preserve original capitalisation
+    var fromName = (existingInProduct[0].skuName || existingInProduct[0].skuId)
+      .replace(/^Google\s+Workspace\s+/i, '').trim();
     applyBtn.disabled    = false;
     labelEl.textContent  = 'Switch';
     hintEl.innerHTML     = '<i class="bi bi-arrow-repeat me-1"></i>Will <strong>switch</strong> ' +
