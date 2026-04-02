@@ -1136,60 +1136,47 @@ function getLicenseInventory() {
 }
 
 /**
- * Returns all license assignments for a user by scanning listForProduct for
- * each known product. This is more reliable than get()-per-SKU because it
- * returns exactly what the API has assigned rather than depending on catalog
- * SKU IDs matching the API's internal IDs.
+ * Returns all license assignments for a given user.
+ *
+ * Strategy: use getLicenseInventory() to discover the real skuIds that are
+ * actually in use in the domain, then call LicenseAssignments.get() for each
+ * one. get() accepts email directly (no userId format ambiguity), and using
+ * inventory-derived skuIds avoids catalog-vs-API mismatch issues.
  *
  * @param {string} userEmail
  * @returns {{ licenses: Array<{productId, productName, skuId, skuName}> }}
  */
 function getUserLicenses(userEmail) {
-  var emailLower = userEmail.toLowerCase();
-  var customerId = getCustomerId_();
-  var products   = getLicenseProducts();
-  var licenses   = [];
+  var inventoryResult = getLicenseInventory();
 
-  // Build skuId → catalog name lookup for display
+  // Build catalog skuId → skuName for clean display names
   var catalogNames = {};
-  products.forEach(function(p) {
+  getLicenseProducts().forEach(function(p) {
     p.skus.forEach(function(s) { catalogNames[s.skuId] = s.skuName; });
   });
 
-  products.forEach(function(product) {
-    var pageToken = null;
-    do {
-      var opts = { maxResults: 1000 };
-      if (pageToken) opts.pageToken = pageToken;
-      try {
-        // Let errors propagate — silent breaks were masking failures as empty results
-        var data = AdminLicenseManager.LicenseAssignments.listForProduct(
-          product.productId, customerId, opts
+  var licenses = [];
+  inventoryResult.inventory.forEach(function(item) {
+    try {
+      AdminLicenseManager.LicenseAssignments.get(
+        item.productId, item.skuId, userEmail
+      );
+      // No exception → this user has this license
+      licenses.push({
+        productId:   item.productId,
+        productName: item.productName,
+        skuId:       item.skuId,
+        skuName:     catalogNames[item.skuId] || item.skuName
+      });
+    } catch (e) {
+      var msg = e.message || '';
+      if (msg.indexOf('403') !== -1 || msg.indexOf('do not have permission') !== -1) {
+        throw new Error(
+          'Permission denied: the apps.licensing OAuth scope has not been authorized.'
         );
-        var found = false;
-        (data.items || []).forEach(function(item) {
-          if ((item.userId || '').toLowerCase() === emailLower) {
-            found = true;
-            licenses.push({
-              productId:   product.productId,
-              productName: product.productName,
-              skuId:       item.skuId,
-              skuName:     catalogNames[item.skuId] || item.skuName || item.skuId
-            });
-          }
-        });
-        // Stop paging this product once the user is found
-        pageToken = found ? null : (data.nextPageToken || null);
-      } catch (e) {
-        var msg = e.message || '';
-        if (msg.indexOf('403') !== -1 || msg.indexOf('do not have permission') !== -1) {
-          throw new Error(
-            'Permission denied: the apps.licensing OAuth scope has not been authorized.'
-          );
-        }
-        // Other errors (invalid productId, not supported) — skip this product only
       }
-    } while (pageToken);
+      // 404 / "does not have a license" / etc. — user simply doesn't have this SKU
+    }
   });
 
   return { licenses: licenses };
