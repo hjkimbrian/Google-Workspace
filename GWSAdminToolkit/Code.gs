@@ -1028,10 +1028,11 @@ function getAssignableLicenseSkus() {
 function getUserLicenses(userEmail) {
   var products  = getLicenseProducts();
   var licenses  = [];
-  var errors    = [];
 
-  products.forEach(function(product) {
-    product.skus.forEach(function(sku) {
+  for (var i = 0; i < products.length; i++) {
+    var product = products[i];
+    for (var j = 0; j < product.skus.length; j++) {
+      var sku = product.skus[j];
       try {
         AdminLicenseManager.LicenseAssignments.get(
           product.productId, sku.skuId, userEmail
@@ -1044,18 +1045,24 @@ function getUserLicenses(userEmail) {
           skuName:     sku.skuName
         });
       } catch (e) {
-        // Only a 404 means the SKU is simply not assigned — anything else
-        // (403, 500, quota error, etc.) is an unexpected failure that we
-        // should surface rather than silently treating as "no license".
-        if (e.message && e.message.indexOf('404') === -1) {
-          errors.push(sku.skuId + ': ' + e.message);
+        var msg = e.message || '';
+        if (msg.indexOf('404') !== -1) {
+          // Expected: this SKU is simply not assigned to the user.
+          continue;
         }
+        if (msg.indexOf('403') !== -1 || msg.indexOf('do not have permission') !== -1) {
+          // Permission error applies to all SKUs — fail fast with a clear message
+          // rather than repeating the same error for every remaining SKU.
+          throw new Error(
+            'Permission denied: the apps.licensing OAuth scope has not been ' +
+            'authorized. Re-authorize the script at ' +
+            'https://developers.google.com/apps-script/guides/support/troubleshooting#authorization-is'
+          );
+        }
+        // Any other unexpected error (quota, 500, etc.) — surface it immediately.
+        throw new Error('License lookup failed for SKU ' + sku.skuId + ': ' + msg);
       }
-    });
-  });
-
-  if (errors.length > 0) {
-    throw new Error('License lookup failed for one or more SKUs: ' + errors.join('; '));
+    }
   }
 
   return { licenses: licenses };
