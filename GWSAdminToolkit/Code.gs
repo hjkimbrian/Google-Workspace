@@ -1046,13 +1046,16 @@ function getUserLicenses(userEmail) {
         });
       } catch (e) {
         var msg = e.message || '';
-        if (msg.indexOf('404') !== -1) {
-          // Expected: this SKU is simply not assigned to the user.
+        // Silently skip any "not assigned" response — the API surfaces these
+        // in several different ways depending on the SKU/product.
+        if (msg.indexOf('404') !== -1 ||
+            msg.indexOf('does not have a license') !== -1 ||
+            msg.indexOf('Invalid productId') !== -1 ||
+            msg.indexOf('Invalid skuId') !== -1) {
           continue;
         }
         if (msg.indexOf('403') !== -1 || msg.indexOf('do not have permission') !== -1) {
-          // Permission error applies to all SKUs — fail fast with a clear message
-          // rather than repeating the same error for every remaining SKU.
+          // Permission error applies to all SKUs — fail fast with a clear message.
           throw new Error(
             'Permission denied: the apps.licensing OAuth scope has not been ' +
             'authorized. Re-authorize the script at ' +
