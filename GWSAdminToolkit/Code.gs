@@ -862,6 +862,22 @@ function removeCalendarAcl(ownerEmail, ruleId) {
 // the advanced service runs as the deploying admin's credentials.
 
 /**
+ * Returns the domain's real customer ID (e.g. "C0abc123") by looking up the
+ * deploying admin's account via the Directory API. Falls back to 'my_customer'
+ * if the lookup fails. The Licensing API list operations require this ID.
+ *
+ * @returns {string}
+ */
+function getCustomerId_() {
+  try {
+    var admin = AdminDirectory.Users.get(Session.getActiveUser().getEmail());
+    return admin.customerId || 'my_customer';
+  } catch (e) {
+    return 'my_customer';
+  }
+}
+
+/**
  * SKU IDs that cannot be individually assigned:
  *   – "Archived User" SKUs  (retain data, no active service)
  *   – "Former Employee" vault archive SKU
@@ -875,6 +891,27 @@ var NON_ASSIGNABLE_SKU_IDS_ = [
   '1010020031',              // Enterprise Plus – Archived
   'Google-Vault-Former-Employee', // Vault Former Employee (archive)
   '1010310002',              // Education Fundamentals (site-based)
+];
+
+/** Education SKU IDs — excluded from the standard assignment/sync dropdowns. */
+var EDUCATION_SKU_IDS_ = [
+  '1010310002', // Education Fundamentals (also non-assignable)
+  '1010310003', // Education Standard
+  '1010310001', // Education Plus – Legacy
+  '1010310005', // Education Plus
+  '1010310004', // Teaching and Learning Upgrade
+];
+
+/**
+ * Legacy G Suite SKU IDs and Essentials SKU IDs that cannot coexist with
+ * standard Workspace (Business/Enterprise) SKUs — excluded from all dropdowns.
+ */
+var LEGACY_AND_ESSENTIALS_SKU_IDS_ = [
+  'Google-Apps-For-Business', // G Suite Basic (Legacy)
+  'Google-Apps-Unlimited',    // G Suite Business (Legacy)
+  '1010060001',               // Enterprise Essentials
+  '1010060003',               // Essentials
+  '1010060005',               // Enterprise Essentials Plus
 ];
 
 /**
@@ -998,54 +1035,152 @@ function getActiveLicenseProducts() {
 }
 
 /**
- * Returns the full catalog minus SKUs that cannot be individually assigned
- * (archive-user SKUs and site-based blanket licenses).
+ * Returns Google Workspace (Google-Apps) SKUs that can be individually
+ * assigned, excluding archived SKUs, site-based SKUs, and Education SKUs.
  * Used to populate the per-user assignment picker.
  *
  * @returns {Array<{productId, productName, skus: Array<{skuId, skuName}>}>}
  */
 function getAssignableLicenseSkus() {
   var catalog = getLicenseProducts();
-  return catalog.map(function(product) {
-    return {
-      productId:   product.productId,
-      productName: product.productName,
-      skus: product.skus.filter(function(sku) {
-        return NON_ASSIGNABLE_SKU_IDS_.indexOf(sku.skuId) === -1 &&
-               sku.skuName.indexOf('Archived') === -1;
-      })
-    };
-  }).filter(function(p) { return p.skus.length > 0; });
+  return catalog
+    .filter(function(p) { return p.productId === 'Google-Apps'; })
+    .map(function(product) {
+      return {
+        productId:   product.productId,
+        productName: product.productName,
+        skus: product.skus.filter(function(sku) {
+          return NON_ASSIGNABLE_SKU_IDS_.indexOf(sku.skuId) === -1 &&
+                 sku.skuName.indexOf('Archived') === -1 &&
+                 EDUCATION_SKU_IDS_.indexOf(sku.skuId) === -1 &&
+                 LEGACY_AND_ESSENTIALS_SKU_IDS_.indexOf(sku.skuId) === -1;
+        })
+      };
+    })
+    .filter(function(p) { return p.skus.length > 0; });
 }
 
 /**
- * Returns all license assignments for a user across all known products/SKUs.
- * Uses AdminLicenseManager advanced service.
+ * Returns a flat list of Google Workspace SKUs currently in use in the domain,
+ * filtered to only assignable SKUs (no archived, no education, no legacy, no
+ * essentials). Builds from getLicenseInventory() so it matches what the
+ * Domain License Inventory section shows.
+ *
+ * @returns {{ skus: Array<{productId, productName, skuId, skuName}> }}
+ */
+function getActiveWorkspaceSkus() {
+  var result = getLicenseInventory();
+  var skus = result.inventory.filter(function(item) {
+    return NON_ASSIGNABLE_SKU_IDS_.indexOf(item.skuId) === -1 &&
+           EDUCATION_SKU_IDS_.indexOf(item.skuId) === -1 &&
+           LEGACY_AND_ESSENTIALS_SKU_IDS_.indexOf(item.skuId) === -1 &&
+           item.skuName.indexOf('Archived') === -1;
+  }).map(function(item) {
+    return {
+      productId:   item.productId,
+      productName: item.productName,
+      skuId:       item.skuId,
+      skuName:     item.skuName
+    };
+  });
+  return { skus: skus };
+}
+
+/**
+ * Returns all Google Workspace SKUs with their assigned-user counts, built by
+ * paginating listForProduct (one call covers all SKUs) and grouping by skuId.
+ * SKU names come from the API response; falls back to the catalog if missing.
+ *
+ * @returns {{ inventory: Array<{productId, productName, skuId, skuName, count}> }}
+ */
+function getLicenseInventory() {
+  // Build catalog skuId → skuName lookup
+  var catalog   = getLicenseProducts();
+  var workspace = catalog.filter(function(p) { return p.productId === 'Google-Apps'; })[0];
+  var catalogNames = {};
+  if (workspace) {
+    workspace.skus.forEach(function(sku) { catalogNames[sku.skuId] = sku.skuName; });
+  }
+
+  // Paginate listForProduct to count all assignments grouped by skuId
+  var customerId = getCustomerId_();
+  var skuCounts  = {};
+  var skuNames   = {};
+  var pageToken  = null;
+  do {
+    var opts = { maxResults: 1000 };
+    if (pageToken) opts.pageToken = pageToken;
+    // Let errors propagate — silent breaks were masking failures as empty results
+    var data = AdminLicenseManager.LicenseAssignments.listForProduct(
+      'Google-Apps', customerId, opts
+    );
+    (data.items || []).forEach(function(item) {
+      skuCounts[item.skuId] = (skuCounts[item.skuId] || 0) + 1;
+      if (item.skuName && !skuNames[item.skuId]) skuNames[item.skuId] = item.skuName;
+    });
+    pageToken = data.nextPageToken || null;
+  } while (pageToken);
+
+  var inventory = Object.keys(skuCounts).map(function(skuId) {
+    return {
+      productId:   'Google-Apps',
+      productName: 'Google Workspace',
+      skuId:       skuId,
+      // Prefer the API-provided skuName — it reflects the actual plan name in
+      // this domain, which may differ from the static catalog (e.g. skuId
+      // 1010020020 shows as "Business Starter" in the catalog but this domain
+      // may have it assigned as "Enterprise Plus").
+      skuName:     skuNames[skuId] || catalogNames[skuId] || skuId,
+      count:       skuCounts[skuId]
+    };
+  });
+
+  inventory.sort(function(a, b) { return b.count - a.count; });
+  return { inventory: inventory };
+}
+
+/**
+ * Returns all license assignments for a given user.
+ *
+ * Strategy: use getLicenseInventory() to discover the real skuIds that are
+ * actually in use in the domain, then call LicenseAssignments.get() for each
+ * one. get() accepts email directly (no userId format ambiguity), and using
+ * inventory-derived skuIds avoids catalog-vs-API mismatch issues.
  *
  * @param {string} userEmail
  * @returns {{ licenses: Array<{productId, productName, skuId, skuName}> }}
  */
 function getUserLicenses(userEmail) {
-  var products  = getLicenseProducts();
-  var licenses  = [];
+  var inventoryResult = getLicenseInventory();
 
-  products.forEach(function(product) {
-    product.skus.forEach(function(sku) {
-      try {
-        AdminLicenseManager.LicenseAssignments.get(
-          product.productId, sku.skuId, userEmail
+  // Build catalog skuId → skuName for clean display names
+  var catalogNames = {};
+  getLicenseProducts().forEach(function(p) {
+    p.skus.forEach(function(s) { catalogNames[s.skuId] = s.skuName; });
+  });
+
+  var licenses = [];
+  inventoryResult.inventory.forEach(function(item) {
+    try {
+      AdminLicenseManager.LicenseAssignments.get(
+        item.productId, item.skuId, userEmail
+      );
+      // No exception → this user has this license
+      licenses.push({
+        productId:   item.productId,
+        productName: item.productName,
+        skuId:       item.skuId,
+        skuName:     item.skuName || catalogNames[item.skuId]
+      });
+    } catch (e) {
+      var msg = e.message || '';
+      if (msg.indexOf('403') !== -1 || msg.indexOf('do not have permission') !== -1) {
+        throw new Error(
+          'Permission denied: the apps.licensing OAuth scope has not been authorized.'
         );
-        // No exception → license is assigned.
-        licenses.push({
-          productId:   product.productId,
-          productName: product.productName,
-          skuId:       sku.skuId,
-          skuName:     sku.skuName
-        });
-      } catch (e) {
-        // 404 = not assigned for this SKU — skip.
       }
-    });
+      // 404 / "does not have a license" / etc. — user simply doesn't have this SKU
+    }
   });
 
   return { licenses: licenses };
@@ -1234,6 +1369,17 @@ function syncLicensesForGroup(groupEmail, productId, skuId, dryRun) {
   // Get all current licensees for this product (any SKU)
   var currentLicensees = getLicensedUsersForProduct_(productId);
 
+  // Build skuId → display name map (API-provided names take precedence over catalog)
+  var nameMap = {};
+  getLicenseProducts().forEach(function(p) {
+    p.skus.forEach(function(s) { nameMap[s.skuId] = s.skuName; });
+  });
+  try {
+    getLicenseInventory().inventory.forEach(function(item) {
+      nameMap[item.skuId] = item.skuName; // API name wins
+    });
+  } catch (e) { /* inventory unavailable — fall back to catalog names */ }
+
   // Build change list
   var changes = [];
 
@@ -1241,18 +1387,28 @@ function syncLicensesForGroup(groupEmail, productId, skuId, dryRun) {
   Object.keys(memberSet).forEach(function(email) {
     var currentSku = currentLicensees[email];
     if (!currentSku) {
-      changes.push({ action: 'ASSIGN',    email: email, fromSku: null,       toSku: skuId });
+      changes.push({ action: 'ASSIGN',    email: email,
+                     fromSku: null,       fromSkuName: null,
+                     toSku: skuId,        toSkuName: nameMap[skuId] || skuId });
     } else if (currentSku === skuId) {
-      changes.push({ action: 'NO_CHANGE', email: email, fromSku: currentSku, toSku: skuId });
+      changes.push({ action: 'NO_CHANGE', email: email,
+                     fromSku: currentSku, fromSkuName: nameMap[currentSku] || currentSku,
+                     toSku: skuId,        toSkuName: nameMap[skuId] || skuId });
     } else {
-      changes.push({ action: 'SWITCH',    email: email, fromSku: currentSku, toSku: skuId });
+      changes.push({ action: 'SWITCH',    email: email,
+                     fromSku: currentSku, fromSkuName: nameMap[currentSku] || currentSku,
+                     toSku: skuId,        toSkuName: nameMap[skuId] || skuId });
     }
   });
 
-  // Process licensed users NOT in the group
+  // Process licensed users NOT in the group who hold the target SKU specifically.
+  // Users with a different SKU are unaffected — we only manage the target SKU.
   Object.keys(currentLicensees).forEach(function(email) {
-    if (!memberSet[email]) {
-      changes.push({ action: 'REMOVE', email: email, fromSku: currentLicensees[email], toSku: null });
+    if (!memberSet[email] && currentLicensees[email] === skuId) {
+      var fromSku = currentLicensees[email];
+      changes.push({ action: 'REMOVE', email: email,
+                     fromSku: fromSku, fromSkuName: nameMap[fromSku] || fromSku,
+                     toSku: null,      toSkuName: null });
     }
   });
 
@@ -1351,8 +1507,9 @@ function writeSyncLog(groupEmail, productId, skuId, changes, sheetId) {
  * @returns {Object}
  */
 function getLicensedUsersForProduct_(productId) {
-  var result    = {};
-  var pageToken = null;
+  var result     = {};
+  var customerId = getCustomerId_();
+  var pageToken  = null;
 
   do {
     var opts = { maxResults: 1000 };
@@ -1360,7 +1517,7 @@ function getLicensedUsersForProduct_(productId) {
 
     try {
       var data = AdminLicenseManager.LicenseAssignments.listForProduct(
-        productId, 'my_customer', opts
+        productId, customerId, opts
       );
       (data.items || []).forEach(function(item) {
         result[item.userId.toLowerCase()] = item.skuId;
